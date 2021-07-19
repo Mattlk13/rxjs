@@ -1,18 +1,15 @@
 import { expect } from 'chai';
 import * as sinon from 'sinon';
-import { Subscriber, asapScheduler as asap, range, of} from 'rxjs';
+import { asapScheduler as asap, range, of} from 'rxjs';
 import { TestScheduler } from 'rxjs/testing';
 import { expectObservable } from '../helpers/marble-testing';
-import { dispatch } from 'rxjs/internal/observable/range';
 import { concatMap, delay } from 'rxjs/operators';
-
-declare const asDiagram: any;
 
 declare const rxTestScheduler: TestScheduler;
 
 /** @test {range} */
 describe('range', () => {
-  asDiagram('range(1, 10)')('should create an observable with numbers 1 to 10', () => {
+  it('should create an observable with numbers 1 to 10', () => {
     const e1 = range(1, 10)
       // for the purpose of making a nice diagram, spread out the synchronous emissions
       .pipe(concatMap((x, i) => of(x).pipe(delay(i === 0 ? 0 : 20, rxTestScheduler))));
@@ -55,7 +52,7 @@ describe('range', () => {
     expect(results).to.deep.equal([12, 13, 14, 15]);
   });
 
-  it('should accept a scheduler', (done: MochaDone) => {
+  it('should accept a scheduler', (done) => {
     const expected = [12, 13, 14, 15];
     sinon.spy(asap, 'schedule');
 
@@ -88,49 +85,22 @@ describe('range', () => {
     expectObservable(e1).toBe(expected, values);
     expectObservable(e1).toBe(expected, values);
   });
-});
 
-describe('RangeObservable', () => {
-  describe('dispatch', () => {
-    it('should complete if index >= count', () => {
-      const o = new Subscriber();
-      const obj: Subscriber<any> = <any>sinon.stub(o);
+  it('should return empty for range(0)', () => {
+    const results: any[] = [];
+    range(0).subscribe({
+      next: value => results.push(value),
+      complete: () => results.push('done')
+    })
+    expect(results).to.deep.equal(['done'])
+  });
 
-      const state = {
-        subscriber: obj,
-        index: 10,
-        start: 0,
-        count: 9
-      };
-
-      dispatch.call({}, state);
-
-      expect(state.subscriber.complete).have.been.called;
-      expect(state.subscriber.next).not.have.been.called;
-    });
-
-    it('should next out another value and increment the index and start', () => {
-      const o = new Subscriber();
-      const obj: Subscriber<any> = <any>sinon.stub(o);
-
-      const state = {
-        subscriber: obj,
-        index: 1,
-        start: 5,
-        count: 9
-      };
-
-      const thisArg = {
-        schedule: sinon.spy()
-      };
-
-      dispatch.call(thisArg, state);
-
-      expect(state.subscriber.complete).not.have.been.called;
-      expect(state.subscriber.next).have.been.calledWith(5);
-      expect(state.start).to.equal(6);
-      expect(state.index).to.equal(2);
-      expect(thisArg.schedule).have.been.calledWith(state);
-    });
+  it('should return empty for range with a negative count', () => {
+    const results: any[] = [];
+    range(5, -5).subscribe({
+      next: value => results.push(value),
+      complete: () => results.push('done')
+    })
+    expect(results).to.deep.equal(['done'])
   });
 });

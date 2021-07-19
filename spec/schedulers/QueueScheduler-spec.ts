@@ -1,35 +1,45 @@
 import { expect } from 'chai';
 import * as sinon from 'sinon';
-import { queueScheduler, Subscription } from 'rxjs';
+import { queueScheduler, Subscription, merge } from 'rxjs';
+import { delay } from 'rxjs/operators';
+import { TestScheduler } from 'rxjs/testing';
+import { observableMatcher } from '../helpers/observableMatcher';
 
 const queue = queueScheduler;
 
 /** @test {Scheduler} */
 describe('Scheduler.queue', () => {
+  let testScheduler: TestScheduler;
+
+  beforeEach(() => {
+    testScheduler = new TestScheduler(observableMatcher);
+  });
+
   it('should act like the async scheduler if delay > 0', () => {
-    let actionHappened = false;
-    const sandbox = sinon.sandbox.create();
-    const fakeTimer = sandbox.useFakeTimers();
-    queue.schedule(() => {
-      actionHappened = true;
-    }, 50);
-    expect(actionHappened).to.be.false;
-    fakeTimer.tick(25);
-    expect(actionHappened).to.be.false;
-    fakeTimer.tick(25);
-    expect(actionHappened).to.be.true;
-    sandbox.restore();
+    testScheduler.run(({ cold, expectObservable, time }) => {
+      const a = cold('  a            ');
+      const ta = time(' ----|        ');
+      const b = cold('  b            ');
+      const tb = time(' --------|    ');
+      const expected = '----a---b----';
+
+      const result = merge(
+        a.pipe(delay(ta, queue)),
+        b.pipe(delay(tb, queue))
+      );
+      expectObservable(result).toBe(expected);
+    });
   });
 
   it('should switch from synchronous to asynchronous at will', () => {
-    const sandbox = sinon.sandbox.create();
+    const sandbox = sinon.createSandbox();
     const fakeTimer = sandbox.useFakeTimers();
 
     let asyncExec = false;
     let state: Array<number> = [];
 
     queue.schedule(function (index) {
-      state.push(index);
+      state.push(index!);
       if (index === 0) {
         this.schedule(1, 100);
       } else if (index === 1) {

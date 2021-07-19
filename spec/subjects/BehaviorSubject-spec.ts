@@ -1,7 +1,8 @@
 import { expect } from 'chai';
 import { hot, expectObservable } from '../helpers/marble-testing';
-import { BehaviorSubject, Subject, ObjectUnsubscribedError, Observable, of } from 'rxjs';
+import { BehaviorSubject, Subject, ObjectUnsubscribedError, of } from 'rxjs';
 import { tap, mergeMapTo } from 'rxjs/operators';
+import { asInteropSubject } from '../helpers/interop-helper';
 
 /** @test {BehaviorSubject} */
 describe('BehaviorSubject', () => {
@@ -57,7 +58,7 @@ describe('BehaviorSubject', () => {
     expect(subject.value).to.equal('bunny');
   });
 
-  it('should start with an initialization value', (done: MochaDone) => {
+  it('should start with an initialization value', (done) => {
     const subject = new BehaviorSubject('foo');
     const expected = ['foo', 'bar'];
     let i = 0;
@@ -70,7 +71,7 @@ describe('BehaviorSubject', () => {
     subject.complete();
   });
 
-  it('should pump values to multiple subscribers', (done: MochaDone) => {
+  it('should pump values to multiple subscribers', (done) => {
     const subject = new BehaviorSubject('init');
     const expected = ['init', 'foo', 'bar'];
     let i = 0;
@@ -109,7 +110,7 @@ describe('BehaviorSubject', () => {
     expect(results).to.deep.equal(['init', 'foo']);
   });
 
-  it('should clean out unsubscribed subscribers', (done: MochaDone) => {
+  it('should clean out unsubscribed subscribers', (done) => {
     const subject = new BehaviorSubject('init');
 
     const sub1 = subject.subscribe((x: string) => {
@@ -174,7 +175,7 @@ describe('BehaviorSubject', () => {
     expectObservable(subscriber1).toBe(expected1);
   });
 
-  it('should be an Observer which can be given to Observable.subscribe', (done: MochaDone) => {
+  it('should be an Observer which can be given to Observable.subscribe', (done) => {
     const source = of(1, 2, 3, 4, 5);
     const subject = new BehaviorSubject(0);
     const expected = [0, 1, 2, 3, 4, 5];
@@ -185,9 +186,32 @@ describe('BehaviorSubject', () => {
       }, (x) => {
         done(new Error('should not be called'));
       }, () => {
+        expect(subject.value).to.equal(5);
         done();
       });
 
     source.subscribe(subject);
+  });
+
+  it.skip('should be an Observer which can be given to an interop source', (done) => {
+    // This test reproduces a bug reported in this issue:
+    // https://github.com/ReactiveX/rxjs/issues/5105
+    // However, it cannot easily be fixed. See this comment:
+    // https://github.com/ReactiveX/rxjs/issues/5105#issuecomment-578405446
+    const source = of(1, 2, 3, 4, 5);
+    const subject = new BehaviorSubject(0);
+    const expected = [0, 1, 2, 3, 4, 5];
+
+    subject.subscribe(
+      (x: number) => {
+        expect(x).to.equal(expected.shift());
+      }, (x) => {
+        done(new Error('should not be called'));
+      }, () => {
+        expect(subject.value).to.equal(5);
+        done();
+      });
+
+      source.subscribe(asInteropSubject(subject));
   });
 });

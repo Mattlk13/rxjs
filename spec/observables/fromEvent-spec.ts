@@ -1,19 +1,14 @@
 import { expect } from 'chai';
 import { expectObservable } from '../helpers/marble-testing';
-import { Observable, fromEvent, NEVER, timer, pipe } from 'rxjs';
-import { NodeStyleEventEmitter, NodeCompatibleEventEmitter, NodeEventHandler } from 'rxjs/internal/observable/fromEvent';
+import { fromEvent, NEVER, timer } from 'rxjs';
 import { mapTo, take, concat } from 'rxjs/operators';
 import { TestScheduler } from 'rxjs/testing';
 
-declare const type: Function;
-
-declare function asDiagram(arg: string): Function;
 declare const rxTestScheduler: TestScheduler;
 
 /** @test {fromEvent} */
 describe('fromEvent', () => {
-  asDiagram('fromEvent(element, \'click\')')
-  ('should create an observable of click on the element', () => {
+  it('should create an observable of click on the element', () => {
     const target = {
       addEventListener: (eventType: any, listener: any) => {
         timer(50, 20, rxTestScheduler)
@@ -186,20 +181,15 @@ describe('fromEvent', () => {
     expect(offHandler).to.equal(onHandler);
   });
 
-  it('should error on invalid event targets', () => {
+  it('should throw if passed an invalid event target', () => {
     const obj = {
       addListener: () => {
         //noop
       }
     };
-
-    fromEvent(obj as any, 'click').subscribe({
-      error(err: any) {
-        expect(err).to.exist
-          .and.be.instanceof(Error)
-          .and.have.property('message', 'Invalid event target');
-      }
-    });
+    expect(() => {
+      fromEvent(obj as any, 'click');
+    }).to.throw(/Invalid event target/)
   });
 
   it('should pass through options to addEventListener and removeEventListener', () => {
@@ -227,7 +217,7 @@ describe('fromEvent', () => {
     expect(offOptions).to.equal(expectedOptions);
   });
 
-  it('should pass through events that occur', (done: MochaDone) => {
+  it('should pass through events that occur', (done) => {
     let send: any;
     const obj = {
       on: (name: string, handler: Function) => {
@@ -250,7 +240,7 @@ describe('fromEvent', () => {
     send('test');
   });
 
-  it('should pass through events that occur and use the selector if provided', (done: MochaDone) => {
+  it('should pass through events that occur and use the selector if provided', (done) => {
     let send: any;
     const obj = {
       on: (name: string, handler: Function) => {
@@ -277,7 +267,7 @@ describe('fromEvent', () => {
     send('test');
   });
 
-  it('should not fail if no event arguments are passed and the selector does not return', (done: MochaDone) => {
+  it('should not fail if no event arguments are passed and the selector does not return', (done) => {
     let send: any;
     const obj = {
       on: (name: string, handler: Function) => {
@@ -304,7 +294,7 @@ describe('fromEvent', () => {
     send();
   });
 
-  it('should return a value from the selector if no event arguments are passed', (done: MochaDone) => {
+  it('should return a value from the selector if no event arguments are passed', (done) => {
     let send: any;
     const obj = {
       on: (name: string, handler: Function) => {
@@ -331,7 +321,7 @@ describe('fromEvent', () => {
     send();
   });
 
-  it('should pass multiple arguments to selector from event emitter', (done: MochaDone) => {
+  it('should pass multiple arguments to selector from event emitter', (done) => {
     let send: any;
     const obj = {
       on: (name: string, handler: Function) => {
@@ -358,7 +348,7 @@ describe('fromEvent', () => {
     send(1, 2, 3);
   });
 
-  it('should emit multiple arguments from event as an array', (done: MochaDone) => {
+  it('should emit multiple arguments from event as an array', (done) => {
     let send: any;
     const obj = {
       on: (name: string, handler: Function) => {
@@ -381,14 +371,14 @@ describe('fromEvent', () => {
     send(1, 2, 3);
   });
 
-  it('should not throw an exception calling toString on obj with a null prototype', (done: MochaDone) => {
+  it('should not throw an exception calling toString on obj with a null prototype', (done) => {
     // NOTE: Can not test with Object.create(null) or `class Foo extends null`
     // due to TypeScript bug. https://github.com/Microsoft/TypeScript/issues/1108
     class NullProtoEventTarget {
       on() { /*noop*/ }
       off() { /*noop*/ }
     }
-    NullProtoEventTarget.prototype.toString = null;
+    NullProtoEventTarget.prototype.toString = null!;
     const obj: NullProtoEventTarget = new NullProtoEventTarget();
 
     expect(() => {
@@ -397,45 +387,49 @@ describe('fromEvent', () => {
     }).to.not.throw(TypeError);
   });
 
-  type('should support node style event emitters interfaces', () => {
-    /* tslint:disable:no-unused-variable */
-    let a: NodeStyleEventEmitter;
-    let b: Observable<any> = fromEvent(a, 'mock');
-    /* tslint:enable:no-unused-variable */
-  });
+  it('should handle adding events to an arraylike of targets', () => {
+    const nodeList = {
+      [0]: {
+        addEventListener(...args: any[]) {
+          this._addEventListenerArgs = args;
+        },
+        removeEventListener(...args: any[]) {
+          this._removeEventListenerArgs = args;
+        },
+        _addEventListenerArgs: null as any,
+        _removeEventListenerArgs: null as any,
+      },
+      [1]: {
+        addEventListener(...args: any[]) {
+          this._addEventListenerArgs = args;
+        },
+        removeEventListener(...args: any[]) {
+          this._removeEventListenerArgs = args;
+        },
+        _addEventListenerArgs: null as any,
+        _removeEventListenerArgs: null as any,
+      },
+      length: 2
+    };
 
-  type('should support node compatible event emitters interfaces', () => {
-    /* tslint:disable:no-unused-variable */
-    let a: NodeCompatibleEventEmitter;
-    let b: Observable<any> = fromEvent(a, 'mock');
-    /* tslint:enable:no-unused-variable */
-  });
+    const options = {};
 
-  type('should support node style event emitters objects', () => {
-    /* tslint:disable:no-unused-variable */
-    interface NodeEventEmitter {
-      addListener(eventType: string | symbol, handler: NodeEventHandler): this;
-      removeListener(eventType: string | symbol, handler: NodeEventHandler): this;
-    }
-    let a: NodeEventEmitter;
-    let b: Observable<any> = fromEvent(a, 'mock');
-    /* tslint:enable:no-unused-variable */
-  });
+    const subscription = fromEvent(nodeList, 'click', options).subscribe();
 
-  type('should support React Native event emitters', () => {
-    /* tslint:disable:no-unused-variable */
-    interface EmitterSubscription {
-      context: any;
-    }
-    interface ReactNativeEventEmitterListener {
-      addListener(eventType: string, listener: (...args: any[]) => any, context?: any): EmitterSubscription;
-    }
-    interface ReactNativeEventEmitter extends ReactNativeEventEmitterListener {
-      removeListener(eventType: string, listener: (...args: any[]) => any): void;
-    }
-    let a: ReactNativeEventEmitter;
-    let b: Observable<any> = fromEvent(a, 'mock');
-    /* tslint:enable:no-unused-variable */
-  });
+    expect(nodeList[0]._addEventListenerArgs[0]).to.equal('click');
+    expect(nodeList[0]._addEventListenerArgs[1]).to.be.a('function');
+    expect(nodeList[0]._addEventListenerArgs[2]).to.equal(options);
+    
+    expect(nodeList[1]._addEventListenerArgs[0]).to.equal('click');
+    expect(nodeList[1]._addEventListenerArgs[1]).to.be.a('function');
+    expect(nodeList[1]._addEventListenerArgs[2]).to.equal(options);
 
+    expect(nodeList[0]._removeEventListenerArgs).to.be.null;
+    expect(nodeList[1]._removeEventListenerArgs).to.be.null;
+
+    subscription.unsubscribe();
+    
+    expect(nodeList[0]._removeEventListenerArgs).to.deep.equal(nodeList[0]._addEventListenerArgs);
+    expect(nodeList[1]._removeEventListenerArgs).to.deep.equal(nodeList[1]._addEventListenerArgs);
+  });
 });

@@ -1,14 +1,11 @@
 import { expect } from 'chai';
 import { hot, cold, expectObservable, expectSubscriptions } from '../helpers/marble-testing';
 import { publishLast, mergeMapTo, tap, mergeMap, refCount, retry } from 'rxjs/operators';
-import { ConnectableObservable, of, Subscription, Observable } from 'rxjs';
-
-declare function asDiagram(arg: string): Function;
-declare const type: Function;
+import { ConnectableObservable, of, Subscription, Observable, pipe } from 'rxjs';
 
 /** @test {publishLast} */
 describe('publishLast operator', () => {
-  asDiagram('publishLast')('should emit last notification of a simple source Observable', () => {
+  it('should emit last notification of a simple source Observable', () => {
     const source = cold('--1-2---3-4--5-|');
     const sourceSubs =  '^              !';
     const published = source.pipe(publishLast()) as ConnectableObservable<string>;
@@ -265,18 +262,30 @@ describe('publishLast operator', () => {
     done();
   });
 
-  type('should infer the type', () => {
-    /* tslint:disable:no-unused-variable */
-    const source = of<number>(1, 2, 3);
-    const result: ConnectableObservable<number> = source.pipe(publishLast()) as ConnectableObservable<number>;
-    /* tslint:enable:no-unused-variable */
-  });
+  it('should be referentially-transparent', () => {
+    const source1 = cold('-1-2-3-4-5-|');
+    const source1Subs =  '^          !';
+    const expected1 =    '-----------(5|)';
+    const source2 = cold('-6-7-8-9-0-|');
+    const source2Subs =  '^          !';
+    const expected2 =    '-----------(0|)';
 
-  type('should infer the type for the pipeable operator', () => {
-    /* tslint:disable:no-unused-variable */
-    const source = of<number>(1, 2, 3);
-    // TODO: https://github.com/ReactiveX/rxjs/issues/2972
-    const result: ConnectableObservable<{}> = publishLast()(source);
-    /* tslint:enable:no-unused-variable */
+    // Calls to the _operator_ must be referentially-transparent.
+    const partialPipeLine = pipe(
+      publishLast()
+    );
+
+    // The non-referentially-transparent publishing occurs within the _operator function_
+    // returned by the _operator_ and that happens when the complete pipeline is composed.
+    const published1 = source1.pipe(partialPipeLine) as ConnectableObservable<any>;
+    const published2 = source2.pipe(partialPipeLine) as ConnectableObservable<any>;
+
+    expectObservable(published1).toBe(expected1);
+    expectSubscriptions(source1.subscriptions).toBe(source1Subs);
+    expectObservable(published2).toBe(expected2);
+    expectSubscriptions(source2.subscriptions).toBe(source2Subs);
+
+    published1.connect();
+    published2.connect();
   });
 });

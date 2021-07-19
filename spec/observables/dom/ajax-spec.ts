@@ -1,25 +1,26 @@
+/** @prettier */
 import { expect } from 'chai';
 import * as sinon from 'sinon';
-import { root } from 'rxjs/internal/util/root';
+import { ajax, AjaxConfig, AjaxResponse, AjaxError, AjaxTimeoutError } from 'rxjs/ajax';
 import { TestScheduler } from 'rxjs/testing';
-import { ajax, AjaxRequest, AjaxResponse, AjaxError, AjaxTimeoutError } from 'rxjs/ajax';
+import { noop } from 'rxjs';
+import * as nodeFormData from 'form-data';
 
-declare const global: any;
-declare const rxTestScheduler: TestScheduler;
+const root: any = (typeof globalThis !== 'undefined' && globalThis) || (typeof self !== 'undefined' && self) || global;
+
+if (typeof root.FormData === 'undefined') {
+  root.FormData = nodeFormData as any;
+}
 
 /** @test {ajax} */
 describe('ajax', () => {
-  let gXHR: XMLHttpRequest;
   let rXHR: XMLHttpRequest;
 
   let sandbox: sinon.SinonSandbox;
 
   beforeEach(() => {
-    sandbox = sinon.sandbox.create();
-    gXHR = global.XMLHttpRequest;
+    sandbox = sinon.createSandbox();
     rXHR = root.XMLHttpRequest;
-
-    global.XMLHttpRequest = MockXMLHttpRequest;
     root.XMLHttpRequest = MockXMLHttpRequest;
   });
 
@@ -27,103 +28,70 @@ describe('ajax', () => {
     sandbox.restore();
     MockXMLHttpRequest.clearRequest();
 
-    global.XMLHttpRequest = gXHR;
     root.XMLHttpRequest = rXHR;
-
     root.XDomainRequest = null;
     root.ActiveXObject = null;
   });
 
   it('should create default XMLHttpRequest for non CORS', () => {
-    const obj: AjaxRequest = {
+    const obj: AjaxConfig = {
       url: '/',
-      method: ''
+      method: '',
     };
 
     ajax(obj).subscribe();
     expect(MockXMLHttpRequest.mostRecent.withCredentials).to.be.false;
   });
 
-  it('should try to create AXObject for XHR in old version of IE', () => {
-    const axObjectStub = sandbox.stub();
-    axObjectStub.returns(sinon.stub(new MockXMLHttpRequest()));
-    root.ActiveXObject = axObjectStub;
-    root.XMLHttpRequest = null;
-
-    const obj: AjaxRequest = {
-      url: '/',
-      method: '',
-      crossDomain: false,
-    };
-
-    ajax(obj).subscribe();
-    expect(axObjectStub).to.have.been.called;
-  });
-
   it('should raise an error if not able to create XMLHttpRequest', () => {
     root.XMLHttpRequest = null;
     root.ActiveXObject = null;
 
-    const obj: AjaxRequest = {
+    const obj: AjaxConfig = {
       url: '/',
-      method: ''
+      method: '',
     };
 
-    ajax(obj).subscribe(null, err => expect(err).to.exist);
+    ajax(obj).subscribe(null, (err) => expect(err).to.exist);
   });
 
   it('should create XMLHttpRequest for CORS', () => {
-    const obj: AjaxRequest = {
+    const obj: AjaxConfig = {
       url: '/',
       method: '',
       crossDomain: true,
-      withCredentials: true
+      withCredentials: true,
     };
 
     ajax(obj).subscribe();
     expect(MockXMLHttpRequest.mostRecent.withCredentials).to.be.true;
   });
 
-  it('should try to create XDomainRequest for CORS if XMLHttpRequest is not available', () => {
-    const xDomainStub = sandbox.stub();
-    xDomainStub.returns(sinon.stub(new MockXMLHttpRequest()));
-    root.XDomainRequest = xDomainStub;
-    root.XMLHttpRequest = null;
-
-    const obj: AjaxRequest = {
-      url: '/',
-      method: '',
-      crossDomain: true,
-      withCredentials: true
-    };
-
-    ajax(obj).subscribe();
-    expect(xDomainStub).to.have.been.called;
-  });
-
   it('should raise an error if not able to create CORS request', () => {
     root.XMLHttpRequest = null;
     root.XDomainRequest = null;
 
-    const obj: AjaxRequest = {
+    const obj: AjaxConfig = {
       url: '/',
       method: '',
       crossDomain: true,
-      withCredentials: true
+      withCredentials: true,
     };
 
-    ajax(obj).subscribe(null, err => expect(err).to.exist);
+    ajax(obj).subscribe({
+      error: (err) => expect(err).to.exist,
+    });
   });
 
   it('should set headers', () => {
-    const obj: AjaxRequest = {
+    const obj: AjaxConfig = {
       url: '/talk-to-me-goose',
       headers: {
         'Content-Type': 'kenny/loggins',
         'Fly-Into-The': 'Dangah Zone!',
-        'Take-A-Ride-Into-The': 'Danger ZoooOoone!'
+        'Take-A-Ride-Into-The': 'Danger ZoooOoone!',
       },
-      method: ''
+      method: '',
     };
 
     ajax(obj).subscribe();
@@ -132,9 +100,97 @@ describe('ajax', () => {
 
     expect(request.url).to.equal('/talk-to-me-goose');
     expect(request.requestHeaders).to.deep.equal({
+      'content-type': 'kenny/loggins',
+      'fly-into-the': 'Dangah Zone!',
+      'take-a-ride-into-the': 'Danger ZoooOoone!',
+      'x-requested-with': 'XMLHttpRequest',
+    });
+    // Did not mutate the headers passed
+    expect(obj.headers).to.deep.equal({
       'Content-Type': 'kenny/loggins',
       'Fly-Into-The': 'Dangah Zone!',
       'Take-A-Ride-Into-The': 'Danger ZoooOoone!',
+    });
+  });
+
+  describe('ajax XSRF cookie in custom header', () => {
+    beforeEach(() => {
+      (global as any).document = {
+        cookie: 'foo=bar',
+      } as Document;
+    });
+
+    afterEach(() => {
+      delete (global as any).document;
+    });
+
+    it('should send the cookie with a custom header to the same domain', () => {
+      const obj: AjaxConfig = {
+        url: '/some/path',
+        xsrfCookieName: 'foo',
+        xsrfHeaderName: 'Custom-Header-Name',
+      };
+
+      ajax(obj).subscribe();
+
+      const request = MockXMLHttpRequest.mostRecent;
+
+      expect(request.url).to.equal('/some/path');
+      expect(request.requestHeaders).to.deep.equal({
+        'Custom-Header-Name': 'bar',
+        'x-requested-with': 'XMLHttpRequest',
+      });
+    });
+
+    it('should send the cookie cross-domain with a custom header when withCredentials is set', () => {
+      const obj: AjaxConfig = {
+        url: 'https://some.subresouce.net/some/page',
+        xsrfCookieName: 'foo',
+        xsrfHeaderName: 'Custom-Header-Name',
+        crossDomain: true,
+        withCredentials: true,
+      };
+
+      ajax(obj).subscribe();
+
+      const request = MockXMLHttpRequest.mostRecent;
+
+      expect(request.url).to.equal('https://some.subresouce.net/some/page');
+      expect(request.requestHeaders).to.deep.equal({
+        'Custom-Header-Name': 'bar',
+      });
+    });
+
+    it('should not send the cookie cross-domain with a custom header when withCredentials is not set', () => {
+      const obj: AjaxConfig = {
+        url: 'https://some.subresouce.net/some/page',
+        xsrfCookieName: 'foo',
+        xsrfHeaderName: 'Custom-Header-Name',
+        crossDomain: true,
+      };
+
+      ajax(obj).subscribe();
+
+      const request = MockXMLHttpRequest.mostRecent;
+
+      expect(request.url).to.equal('https://some.subresouce.net/some/page');
+      expect(request.requestHeaders).to.deep.equal({});
+    });
+
+    it('should not send the cookie if there is no xsrfHeaderName option', () => {
+      const obj: AjaxConfig = {
+        url: '/some/page',
+        xsrfCookieName: 'foo',
+      };
+
+      ajax(obj).subscribe();
+
+      const request = MockXMLHttpRequest.mostRecent;
+
+      expect(request.url).to.equal('/some/page');
+      expect(request.requestHeaders).to.deep.equal({
+        'x-requested-with': 'XMLHttpRequest',
+      });
     });
   });
 
@@ -143,20 +199,19 @@ describe('ajax', () => {
       url: '/test/monkey',
       method: 'GET',
       crossDomain: false,
-    })
-    .subscribe();
+    }).subscribe();
 
     const request = MockXMLHttpRequest.mostRecent;
 
     expect(request.requestHeaders).to.deep.equal({
-      'X-Requested-With': 'XMLHttpRequest',
+      'x-requested-with': 'XMLHttpRequest',
     });
   });
 
   it('should not set default Content-Type header when no body is sent', () => {
-    const obj: AjaxRequest = {
+    const obj: AjaxConfig = {
       url: '/talk-to-me-goose',
-      method: 'GET'
+      method: 'GET',
     };
 
     ajax(obj).subscribe();
@@ -169,30 +224,32 @@ describe('ajax', () => {
 
   it('should error if createXHR throws', () => {
     let error;
-    const obj = {
+
+    ajax({
       url: '/flibbertyJibbet',
       responseType: 'text',
       createXHR: () => {
         throw new Error('wokka wokka');
-      }
-    };
-
-    ajax(<any>obj)
-      .subscribe((x: any) => {
-        throw 'should not next';
-      }, (err: any) => {
+      },
+    }).subscribe(
+      () => {
+        throw new Error('should not next');
+      },
+      (err: any) => {
         error = err;
-      }, () => {
-        throw 'should not complete';
-      });
+      },
+      () => {
+        throw new Error('should not complete');
+      }
+    );
 
     expect(error).to.be.an('error', 'wokka wokka');
   });
 
-  it('should error if send request throws', (done: MochaDone) => {
+  it('should error if send request throws', (done) => {
     const expected = new Error('xhr send failure');
 
-    const obj = {
+    ajax({
       url: '/flibbertyJibbet',
       responseType: 'text',
       method: '',
@@ -202,72 +259,76 @@ describe('ajax', () => {
           throw expected;
         };
         return ret as any;
-      }
-    };
-
-    ajax(obj)
-      .subscribe(() => {
+      },
+    }).subscribe(
+      () => {
         done(new Error('should not be called'));
-      }, (e: Error) => {
+      },
+      (e: Error) => {
         expect(e).to.be.equal(expected);
         done();
-      }, () => {
+      },
+      () => {
         done(new Error('should not be called'));
-      });
+      }
+    );
   });
 
   it('should succeed on 200', () => {
     const expected = { foo: 'bar' };
-    let result: AjaxResponse;
+    let result: AjaxResponse<any>;
     let complete = false;
-    const obj = {
-      url: '/flibbertyJibbet',
-      responseType: 'text',
-      method: ''
-    };
 
-    ajax(obj)
-      .subscribe((x: any) => {
+    ajax({
+      url: '/flibbertyJibbet',
+      method: '',
+    }).subscribe(
+      (x: any) => {
         result = x;
-      }, null, () => {
+      },
+      null,
+      () => {
         complete = true;
-      });
+      }
+    );
 
     expect(MockXMLHttpRequest.mostRecent.url).to.equal('/flibbertyJibbet');
 
     MockXMLHttpRequest.mostRecent.respondWith({
-      'status': 200,
-      'contentType': 'application/json',
-      'responseText': JSON.stringify(expected)
+      status: 200,
+      responseText: JSON.stringify(expected),
     });
 
-    expect(result.xhr).exist;
-    expect(result.response).to.deep.equal(JSON.stringify({ foo: 'bar' }));
+    expect(result!.xhr).exist;
+    expect(result!.response).to.deep.equal({ foo: 'bar' });
     expect(complete).to.be.true;
   });
 
-  it('should fail if fails to parse response', () => {
+  it('should fail if fails to parse response in older IE', () => {
     let error: any;
-    const obj = {
+    const obj: AjaxConfig = {
       url: '/flibbertyJibbet',
-      responseType: 'json',
-      method: ''
+      method: '',
     };
 
-    ajax(obj)
-      .subscribe((x: any) => {
-        throw 'should not next';
-      }, (err: any) => {
+    // No `response` property on the object (for older IE).
+    MockXMLHttpRequest.noResponseProp = true;
+
+    ajax(obj).subscribe(
+      () => {
+        throw new Error('should not next');
+      },
+      (err: any) => {
         error = err;
-      }, () => {
-        throw 'should not complete';
-      });
+      },
+      () => {
+        throw new Error('should not complete');
+      }
+    );
 
     MockXMLHttpRequest.mostRecent.respondWith({
-      'status': 207,
-      'contentType': '',
-      'responseType': '',
-      'responseText': 'Wee! I am text, but should be valid JSON!'
+      status: 207,
+      responseText: 'Wee! I am text, but should be valid JSON!',
     });
 
     expect(error instanceof SyntaxError).to.be.true;
@@ -276,30 +337,29 @@ describe('ajax', () => {
 
   it('should fail on 404', () => {
     let error: any;
-    const obj = {
+    const obj: AjaxConfig = {
       url: '/flibbertyJibbet',
-      normalizeError: (e: any, xhr: any, type: any) => {
-        return xhr.response || xhr.responseText;
-      },
       responseType: 'text',
-      method: ''
+      method: '',
     };
 
-    ajax(obj)
-      .subscribe((x: any) => {
-        throw 'should not next';
-      }, (err: any) => {
+    ajax(obj).subscribe(
+      () => {
+        throw new Error('should not next');
+      },
+      (err: any) => {
         error = err;
-      }, () => {
-        throw 'should not complete';
-      });
+      },
+      () => {
+        throw new Error('should not complete');
+      }
+    );
 
     expect(MockXMLHttpRequest.mostRecent.url).to.equal('/flibbertyJibbet');
 
     MockXMLHttpRequest.mostRecent.respondWith({
-      'status': 404,
-      'contentType': 'text/plain',
-      'responseText': 'Wee! I am text!'
+      status: 404,
+      responseText: 'Wee! I am text!',
     });
 
     expect(error instanceof AjaxError).to.be.true;
@@ -309,155 +369,164 @@ describe('ajax', () => {
   });
 
   it('should succeed on 300', () => {
-    let result: AjaxResponse;
+    let result: AjaxResponse<any>;
     let complete = false;
-    const obj = {
+    const obj: AjaxConfig = {
       url: '/flibbertyJibbet',
-      normalizeError: (e: any, xhr: any, type: any) => {
-        return xhr.response || xhr.responseText;
-      },
       responseType: 'text',
-      method: ''
+      method: '',
     };
 
-    ajax(obj)
-      .subscribe((x: any) => {
+    ajax(obj).subscribe(
+      (x: any) => {
         result = x;
-      }, null, () => {
+      },
+      null,
+      () => {
         complete = true;
-      });
+      }
+    );
 
     expect(MockXMLHttpRequest.mostRecent.url).to.equal('/flibbertyJibbet');
 
     MockXMLHttpRequest.mostRecent.respondWith({
-      'status': 300,
-      'contentType': 'text/plain',
-      'responseText': 'Wee! I am text!'
+      status: 300,
+      responseText: 'Wee! I am text!',
     });
 
-    expect(result.xhr).exist;
-    expect(result.response).to.deep.equal('Wee! I am text!');
+    expect(result!.xhr).exist;
+    expect(result!.response).to.deep.equal('Wee! I am text!');
     expect(complete).to.be.true;
   });
 
-  it('should fail if fails to parse error response', () => {
+  it('should not fail if fails to parse error response', () => {
     let error: any;
-    const obj = {
+    const obj: AjaxConfig = {
       url: '/flibbertyJibbet',
-      normalizeError: (e: any, xhr: any, type: any) => {
-        return xhr.response || xhr.responseText;
-      },
       responseType: 'json',
-      method: ''
+      method: '',
     };
 
-    ajax(obj).subscribe(x => {
-      throw 'should not next';
-    }, (err: any) => {
-      error = err;
-    }, () => {
-      throw 'should not complete';
-    });
+    ajax(obj).subscribe(
+      () => {
+        throw new Error('should not next');
+      },
+      (err: any) => {
+        error = err;
+      },
+      () => {
+        throw new Error('should not complete');
+      }
+    );
 
     MockXMLHttpRequest.mostRecent.respondWith({
-      'status': 404,
-      'contentType': '',
-      'responseType': '',
-      'responseText': 'Wee! I am text, but should be valid JSON!'
+      status: 404,
+      responseText: 'Unparsable as json',
     });
 
-    expect(error instanceof SyntaxError).to.be.true;
-    expect(error.message).to.equal('Unexpected token W in JSON at position 0');
+    expect(error instanceof AjaxError).to.be.true;
+    // The default behavior of XHR if you get something back that you can't
+    // parse as JSON, but you have a requestType of "json" is to
+    // have `response` set to `null`.
+    expect(error.response).to.be.null;
   });
 
   it('should succeed no settings', () => {
     const expected = JSON.stringify({ foo: 'bar' });
 
-    ajax('/flibbertyJibbet')
-      .subscribe((x: any) => {
+    ajax('/flibbertyJibbet').subscribe(
+      (x: any) => {
         expect(x.status).to.equal(200);
         expect(x.xhr.method).to.equal('GET');
         expect(x.xhr.responseText).to.equal(expected);
-      }, () => {
+      },
+      () => {
         throw 'should not have been called';
-      });
+      }
+    );
 
     expect(MockXMLHttpRequest.mostRecent.url).to.equal('/flibbertyJibbet');
     MockXMLHttpRequest.mostRecent.respondWith({
-      'status': 200,
-      'contentType': 'text/plain',
-      'responseText': expected
+      status: 200,
+      responseText: expected,
     });
   });
 
   it('should fail no settings', () => {
     const expected = JSON.stringify({ foo: 'bar' });
 
-    ajax('/flibbertyJibbet')
-      .subscribe(() => {
+    ajax('/flibbertyJibbet').subscribe(
+      () => {
         throw 'should not have been called';
-      }, (x: any) => {
+      },
+      (x: any) => {
         expect(x.status).to.equal(500);
         expect(x.xhr.method).to.equal('GET');
         expect(x.xhr.responseText).to.equal(expected);
-      }, () => {
+      },
+      () => {
         throw 'should not have been called';
-      });
+      }
+    );
 
     expect(MockXMLHttpRequest.mostRecent.url).to.equal('/flibbertyJibbet');
     MockXMLHttpRequest.mostRecent.respondWith({
-      'status': 500,
-      'contentType': 'text/plain',
-      'responseText': expected
+      status: 500,
+      responseText: expected,
     });
   });
 
   it('should create an asynchronous request', () => {
-    const obj: AjaxRequest = {
+    const obj: AjaxConfig = {
       url: '/flibbertyJibbet',
       responseType: 'text',
-      timeout: 10
+      timeout: 10,
     };
 
-    ajax(obj)
-      .subscribe((x: any) => {
+    ajax(obj).subscribe(
+      (x: any) => {
         expect(x.status).to.equal(200);
         expect(x.xhr.method).to.equal('GET');
         expect(x.xhr.async).to.equal(true);
         expect(x.xhr.timeout).to.equal(10);
         expect(x.xhr.responseType).to.equal('text');
-      }, () => {
+      },
+      () => {
         throw 'should not have been called';
-      });
+      }
+    );
 
     const request = MockXMLHttpRequest.mostRecent;
 
     expect(request.url).to.equal('/flibbertyJibbet');
 
     request.respondWith({
-      'status': 200,
-      'contentType': 'text/plain',
-      'responseText': 'Wee! I am text!'
+      status: 200,
+      responseText: 'Wee! I am text!',
     });
   });
 
   it('should error on timeout of asynchronous request', () => {
-    const obj: AjaxRequest = {
+    const rxTestScheduler = new TestScheduler(noop);
+
+    const obj: AjaxConfig = {
       url: '/flibbertyJibbet',
       responseType: 'text',
-      timeout: 10
+      timeout: 10,
     };
 
-    ajax(obj)
-      .subscribe((x: any) => {
+    ajax(obj).subscribe(
+      () => {
         throw 'should not have been called';
-      }, (e) => {
+      },
+      (e) => {
         expect(e.status).to.equal(0);
         expect(e.xhr.method).to.equal('GET');
         expect(e.xhr.async).to.equal(true);
         expect(e.xhr.timeout).to.equal(10);
         expect(e.xhr.responseType).to.equal('text');
-      });
+      }
+    );
 
     const request = MockXMLHttpRequest.mostRecent;
 
@@ -465,9 +534,8 @@ describe('ajax', () => {
 
     rxTestScheduler.schedule(() => {
       request.respondWith({
-        'status': 200,
-        'contentType': 'text/plain',
-        'responseText': 'Wee! I am text!'
+        status: 200,
+        responseText: 'Wee! I am text!',
       });
     }, 1000);
 
@@ -475,52 +543,33 @@ describe('ajax', () => {
   });
 
   it('should create a synchronous request', () => {
-    const obj: AjaxRequest = {
+    const obj: AjaxConfig = {
       url: '/flibbertyJibbet',
       responseType: 'text',
       timeout: 10,
-      async: false
+      async: false,
     };
 
-    ajax(obj)
-      .subscribe((x: any) => {
-        expect(x.status).to.equal(200);
-        expect(x.xhr.method).to.equal('GET');
-        expect(x.xhr.async).to.equal(false);
-        expect(x.xhr.timeout).to.be.undefined;
-        expect(x.xhr.responseType).to.equal('');
-      }, () => {
-        throw 'should not have been called';
-      });
+    ajax(obj).subscribe();
 
-    const request = MockXMLHttpRequest.mostRecent;
+    const mockXHR = MockXMLHttpRequest.mostRecent;
 
-    expect(request.url).to.equal('/flibbertyJibbet');
+    expect(mockXHR.url).to.equal('/flibbertyJibbet');
+    // Open was called with async `false`.
+    expect(mockXHR.async).to.be.false;
 
-    request.respondWith({
-      'status': 200,
-      'contentType': 'text/plain',
-      'responseText': 'Wee! I am text!'
+    mockXHR.respondWith({
+      status: 200,
+      responseText: 'Wee! I am text!',
     });
   });
 
   describe('ajax request body', () => {
-    let rFormData: FormData;
-
-    beforeEach(() => {
-      rFormData = root.FormData;
-      root.FormData = root.FormData || class { };
-    });
-
-    afterEach(() => {
-      root.FormData = rFormData;
-    });
-
     it('can take string body', () => {
       const obj = {
         url: '/flibbertyJibbet',
-        method: '',
-        body: 'foobar'
+        method: 'POST',
+        body: 'foobar',
       };
 
       ajax(obj).subscribe();
@@ -533,65 +582,43 @@ describe('ajax', () => {
       const body = new root.FormData();
       const obj = {
         url: '/flibbertyJibbet',
-        method: '',
-        body: body
+        method: 'POST',
+        body: body,
       };
 
       ajax(obj).subscribe();
 
       expect(MockXMLHttpRequest.mostRecent.url).to.equal('/flibbertyJibbet');
-      expect(MockXMLHttpRequest.mostRecent.data).to.deep.equal(body);
+      expect(MockXMLHttpRequest.mostRecent.data).to.equal(body);
       expect(MockXMLHttpRequest.mostRecent.requestHeaders).to.deep.equal({
+        'x-requested-with': 'XMLHttpRequest',
       });
     });
 
-    it('should not fail when FormData is undefined', () => {
-      root.FormData = void 0;
-
+    it('should send the URLSearchParams straight through to the body', () => {
+      const body = new URLSearchParams({
+        '🌟': '🚀',
+      });
       const obj = {
         url: '/flibbertyJibbet',
-        method: '',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: { '🌟': '🚀' }
+        method: 'POST',
+        body: body,
       };
 
       ajax(obj).subscribe();
 
       expect(MockXMLHttpRequest.mostRecent.url).to.equal('/flibbertyJibbet');
-    });
-
-    it('should send by form-urlencoded format', () => {
-      const body = {
-        '🌟': '🚀'
-      };
-      const obj = {
-        url: '/flibbertyJibbet',
-        method: '',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: body
-      };
-
-      ajax(obj).subscribe();
-
-      expect(MockXMLHttpRequest.mostRecent.url).to.equal('/flibbertyJibbet');
-      expect(MockXMLHttpRequest.mostRecent.data).to.equal('%F0%9F%8C%9F=%F0%9F%9A%80');
+      expect(MockXMLHttpRequest.mostRecent.data).to.equal(body);
     });
 
     it('should send by JSON', () => {
       const body = {
-        '🌟': '🚀'
+        '🌟': '🚀',
       };
       const obj = {
         url: '/flibbertyJibbet',
-        method: '',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: body
+        method: 'POST',
+        body: body,
       };
 
       ajax(obj).subscribe();
@@ -602,7 +629,7 @@ describe('ajax', () => {
 
     it('should send json body not mattered on case-sensitivity of HTTP headers', () => {
       const body = {
-        hello: 'world'
+        hello: 'world',
       };
 
       const requestObj = {
@@ -610,8 +637,8 @@ describe('ajax', () => {
         method: '',
         body: body,
         headers: {
-          'cOnTeNt-TyPe': 'application/json; charset=UTF-8'
-        }
+          'cOnTeNt-TyPe': 'application/json;charset=UTF-8',
+        },
       };
 
       ajax(requestObj).subscribe();
@@ -620,10 +647,10 @@ describe('ajax', () => {
       expect(MockXMLHttpRequest.mostRecent.data).to.equal('{"hello":"world"}');
     });
 
-    it('should error if send request throws', (done: MochaDone) => {
+    it('should error if send request throws', (done) => {
       const expected = new Error('xhr send failure');
 
-      const obj = {
+      const obj: AjaxConfig = {
         url: '/flibbertyJibbet',
         responseType: 'text',
         method: '',
@@ -634,18 +661,21 @@ describe('ajax', () => {
             throw expected;
           };
           return ret as any;
-        }
+        },
       };
 
-      ajax(obj)
-        .subscribe(() => {
+      ajax(obj).subscribe(
+        () => {
           done(new Error('should not be called'));
-        }, (e: Error) => {
+        },
+        (e: Error) => {
           expect(e).to.be.equal(expected);
           done();
-        }, () => {
+        },
+        () => {
           done(new Error('should not be called'));
-        });
+        }
+      );
     });
   });
 
@@ -655,21 +685,23 @@ describe('ajax', () => {
       let result;
       let complete = false;
 
-      ajax.get('/flibbertyJibbet')
-        .subscribe(x => {
+      ajax.get('/flibbertyJibbet').subscribe(
+        (x) => {
           result = x.response;
-        }, null, () => {
+        },
+        null,
+        () => {
           complete = true;
-        });
+        }
+      );
 
       const request = MockXMLHttpRequest.mostRecent;
 
       expect(request.url).to.equal('/flibbertyJibbet');
 
       request.respondWith({
-        'status': 200,
-        'contentType': 'application/json',
-        'responseText': JSON.stringify(expected)
+        status: 200,
+        responseText: JSON.stringify(expected),
       });
 
       expect(result).to.deep.equal(expected);
@@ -677,28 +709,32 @@ describe('ajax', () => {
     });
 
     it('should succeed on 204 No Content', () => {
-      const expected: null = null;
       let result;
       let complete = false;
 
-      ajax.get('/flibbertyJibbet')
-        .subscribe(x => {
+      ajax.get('/flibbertyJibbet').subscribe(
+        (x) => {
           result = x.response;
-        }, null, () => {
+        },
+        null,
+        () => {
           complete = true;
-        });
+        }
+      );
 
       const request = MockXMLHttpRequest.mostRecent;
 
       expect(request.url).to.equal('/flibbertyJibbet');
 
       request.respondWith({
-        'status': 204,
-        'contentType': 'application/json',
-        'responseText': expected
+        status: 204,
+        responseText: '',
       });
 
-      expect(result).to.deep.equal(expected);
+      // Response will get set to null by the browser XHR
+      // This is sort of arbitrarily determined by our test harness
+      // but we want to be as accurate as possible.
+      expect(result).to.be.null;
       expect(complete).to.be.true;
     });
 
@@ -707,21 +743,23 @@ describe('ajax', () => {
       let result;
       let complete = false;
 
-      ajax.getJSON('/flibbertyJibbet')
-        .subscribe(x => {
+      ajax.getJSON('/flibbertyJibbet').subscribe(
+        (x) => {
           result = x;
-        }, null, () => {
+        },
+        null,
+        () => {
           complete = true;
-        });
+        }
+      );
 
       const request = MockXMLHttpRequest.mostRecent;
 
       expect(request.url).to.equal('/flibbertyJibbet');
 
       request.respondWith({
-        'status': 200,
-        'contentType': 'application/json',
-        'responseText': JSON.stringify(expected)
+        status: 200,
+        responseText: JSON.stringify(expected),
       });
 
       expect(result).to.deep.equal(expected);
@@ -730,361 +768,807 @@ describe('ajax', () => {
   });
 
   describe('ajax.post', () => {
-
     it('should succeed on 200', () => {
       const expected = { foo: 'bar', hi: 'there you' };
-      let result: AjaxResponse;
+      let result: AjaxResponse<any>;
       let complete = false;
 
-      ajax.post('/flibbertyJibbet', expected)
-        .subscribe(x => {
+      ajax.post('/flibbertyJibbet', expected).subscribe(
+        (x) => {
           result = x;
-        }, null, () => {
+        },
+        null,
+        () => {
           complete = true;
-        });
+        }
+      );
 
       const request = MockXMLHttpRequest.mostRecent;
 
       expect(request.method).to.equal('POST');
       expect(request.url).to.equal('/flibbertyJibbet');
       expect(request.requestHeaders).to.deep.equal({
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+        'content-type': 'application/json;charset=utf-8',
+        'x-requested-with': 'XMLHttpRequest',
       });
 
       request.respondWith({
-        'status': 200,
-        'contentType': 'application/json',
-        'responseText': JSON.stringify(expected)
+        status: 200,
+        responseText: JSON.stringify(expected),
       });
 
-      expect(request.data).to.equal('foo=bar&hi=there%20you');
-      expect(result.response).to.deep.equal(expected);
-      expect(complete).to.be.true;
-    });
-
-    it('should properly encode full URLs passed', () => {
-      const expected = { test: 'https://google.com/search?q=encodeURI+vs+encodeURIComponent' };
-      let result: AjaxResponse;
-      let complete = false;
-
-      ajax.post('/flibbertyJibbet', expected)
-        .subscribe(x => {
-          result = x;
-        }, null, () => {
-          complete = true;
-        });
-
-      const request = MockXMLHttpRequest.mostRecent;
-
-      expect(request.method).to.equal('POST');
-      expect(request.url).to.equal('/flibbertyJibbet');
-      expect(request.requestHeaders).to.deep.equal({
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-      });
-
-      request.respondWith({
-        'status': 200,
-        'contentType': 'application/json',
-        'responseText': JSON.stringify(expected)
-      });
-
-      expect(request.data)
-        .to.equal('test=https%3A%2F%2Fgoogle.com%2Fsearch%3Fq%3DencodeURI%2Bvs%2BencodeURIComponent');
-      expect(result.response).to.deep.equal(expected);
+      expect(request.data).to.equal(JSON.stringify(expected));
+      expect(result!.response).to.deep.equal(expected);
       expect(complete).to.be.true;
     });
 
     it('should succeed on 204 No Content', () => {
-      const expected: null = null;
-      let result: AjaxResponse;
+      let result: AjaxResponse<any>;
       let complete = false;
 
-      ajax.post('/flibbertyJibbet', expected)
-        .subscribe(x => {
+      ajax.post('/flibbertyJibbet', undefined).subscribe(
+        (x) => {
           result = x;
-        }, null, () => {
+        },
+        null,
+        () => {
           complete = true;
-        });
+        }
+      );
 
       const request = MockXMLHttpRequest.mostRecent;
 
       expect(request.method).to.equal('POST');
       expect(request.url).to.equal('/flibbertyJibbet');
       expect(request.requestHeaders).to.deep.equal({
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+        'x-requested-with': 'XMLHttpRequest',
       });
 
       request.respondWith({
-        'status': 204,
-        'contentType': 'application/json',
-        'responseType': 'json',
-        'responseText': expected
+        status: 204,
+        responseText: '',
       });
 
-      expect(result.response).to.equal(expected);
+      // Since the default setting for `responseType` is "json",
+      // and our `responseText` is an empty string (which isn't parsable as JSON),
+      // response should be `null` here.
+      expect(result!.response).to.be.null;
       expect(complete).to.be.true;
     });
 
-    it('should succeed in IE on 204 No Content', () => {
-      const expected: null = null;
-      let result: AjaxResponse;
-      let complete = false;
+    it('should allow partial progressSubscriber ', function () {
+      const spy = sinon.spy();
+      const progressSubscriber: any = {
+        next: spy,
+      };
 
-      root.XMLHttpRequest = MockXMLHttpRequestInternetExplorer;
-
-      ajax.post('/flibbertyJibbet', expected)
-        .subscribe(x => {
-          result = x;
-        }, null, () => {
-          complete = true;
-        });
+      ajax({
+        url: '/flibbertyJibbet',
+        progressSubscriber,
+      }).subscribe();
 
       const request = MockXMLHttpRequest.mostRecent;
 
-      expect(request.method).to.equal('POST');
-      expect(request.url).to.equal('/flibbertyJibbet');
-      expect(request.requestHeaders).to.deep.equal({
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-      });
+      request.respondWith(
+        {
+          status: 200,
+          responseText: JSON.stringify({}),
+        },
+        { uploadProgressTimes: 3 }
+      );
 
-      //IE behavior: IE does not provide the a responseText property, so also exercise the code which handles this.
-      request.respondWith({
-          'status': 204,
-          'contentType': 'application/json'
-      });
-
-      expect(result.response).to.equal(expected);
-      expect(complete).to.be.true;
+      expect(spy).to.be.called.callCount(4);
     });
 
-    it('should emit progress event when progressSubscriber is specified', function() {
+    it('should emit progress event when progressSubscriber is specified', function () {
       const spy = sinon.spy();
-      const progressSubscriber = (<any>{
+      const progressSubscriber = <any>{
         next: spy,
         error: () => {
           // noop
         },
         complete: () => {
           // noop
-        }
-      });
+        },
+      };
 
       ajax({
         url: '/flibbertyJibbet',
-        progressSubscriber
-      })
-        .subscribe();
+        progressSubscriber,
+      }).subscribe();
 
       const request = MockXMLHttpRequest.mostRecent;
 
-      request.respondWith({
-        'status': 200,
-        'contentType': 'application/json',
-        'responseText': JSON.stringify({})
-      }, 3);
-
-      expect(spy).to.be.calledThrice;
-    });
-
-    it('should emit progress event when progressSubscriber is specified in IE', function() {
-      const spy = sinon.spy();
-      const progressSubscriber = (<any>{
-        next: spy,
-        error: () => {
-          // noop
+      request.respondWith(
+        {
+          status: 200,
+          responseText: JSON.stringify({}),
         },
-        complete: () => {
-          // noop
-        }
-      });
+        { uploadProgressTimes: 3 }
+      );
 
-      root.XMLHttpRequest = MockXMLHttpRequestInternetExplorer;
-      root.XDomainRequest = MockXMLHttpRequestInternetExplorer;
-
-      ajax({
-        url: '/flibbertyJibbet',
-        progressSubscriber
-      })
-        .subscribe();
-
-      const request = MockXMLHttpRequest.mostRecent;
-
-      request.respondWith({
-        'status': 200,
-        'contentType': 'application/json',
-        'responseText': JSON.stringify({})
-      }, 3);
-
-      expect(spy.callCount).to.equal(3);
+      expect(spy).to.be.called.callCount(4);
     });
-
-  });
-
-  it('should work fine when XMLHttpRequest onreadystatechange property is monkey patched', function() {
-    Object.defineProperty(root.XMLHttpRequest.prototype, 'onreadystatechange', {
-      set: function (fn: (e: ProgressEvent) => any) {
-        const wrapFn = (ev: ProgressEvent) => {
-          const result = fn.call(this, ev);
-          if (result === false) {
-            ev.preventDefault();
-          }
-        };
-        this['_onreadystatechange'] = wrapFn;
-      },
-      get() {
-        return this['_onreadystatechange'];
-      },
-      configurable: true
-    });
-
-    ajax({
-      url: '/flibbertyJibbet'
-    })
-      .subscribe();
-
-    const request = MockXMLHttpRequest.mostRecent;
-    expect(() => {
-      request.onreadystatechange((<any>'onreadystatechange'));
-    }).not.throw();
-
-    delete root.XMLHttpRequest.prototype.onreadystatechange;
-  });
-
-  it('should work fine when XMLHttpRequest ontimeout property is monkey patched', function(done) {
-    Object.defineProperty(root.XMLHttpRequest.prototype, 'ontimeout', {
-      set(fn: (e: ProgressEvent) => any) {
-        const wrapFn = (ev: ProgressEvent) => {
-          const result = fn.call(this, ev);
-          if (result === false) {
-            ev.preventDefault();
-          }
-        };
-        this['_ontimeout'] = wrapFn;
-      },
-      get() {
-        return this['_ontimeout'];
-      },
-      configurable: true
-    });
-
-    const ajaxRequest = {
-      url: '/flibbertyJibbet'
-    };
-
-    ajax(ajaxRequest)
-      .subscribe({
-        error(err) {
-          expect(err.name).to.equal('AjaxTimeoutError');
-          done();
-        }
-      });
-
-    const request = MockXMLHttpRequest.mostRecent;
-    try {
-      request.ontimeout((<any>'ontimeout'));
-    } catch (e) {
-      expect(e.message).to.equal(new AjaxTimeoutError((<any>request), ajaxRequest).message);
-    }
-    delete root.XMLHttpRequest.prototype.ontimeout;
-  });
-
-  it('should work fine when XMLHttpRequest onprogress property is monkey patched', function() {
-    Object.defineProperty(root.XMLHttpRequest.prototype, 'onprogress', {
-      set: function (fn: (e: ProgressEvent) => any) {
-        const wrapFn = (ev: ProgressEvent) => {
-          const result = fn.call(this, ev);
-          if (result === false) {
-            ev.preventDefault();
-          }
-        };
-        this['_onprogress'] = wrapFn;
-      },
-      get() {
-        return this['_onprogress'];
-      },
-      configurable: true
-    });
-
-    ajax({
-      url: '/flibbertyJibbet',
-      progressSubscriber: (<any>{
-        next: () => {
-          // noop
-        },
-        error: () => {
-          // noop
-        },
-        complete: () => {
-          // noop
-        }
-      })
-    })
-      .subscribe();
-
-    const request = MockXMLHttpRequest.mostRecent;
-
-    expect(() => {
-      (request.upload as any).onprogress((<any>'onprogress'));
-    }).not.throw();
-
-    delete root.XMLHttpRequest.prototype.onprogress;
-    delete root.XMLHttpRequest.prototype.upload;
-  });
-
-  it('should work fine when XMLHttpRequest onerror property is monkey patched', function() {
-    Object.defineProperty(root.XMLHttpRequest.prototype, 'onerror', {
-      set(fn: (e: ProgressEvent) => any) {
-        const wrapFn = (ev: ProgressEvent) => {
-          const result = fn.call(this, ev);
-          if (result === false) {
-            ev.preventDefault();
-          }
-        };
-        this['_onerror'] = wrapFn;
-      },
-      get() {
-        return this['_onerror'];
-      },
-      configurable: true
-    });
-
-    ajax({
-      url: '/flibbertyJibbet'
-    })
-      .subscribe({
-        error(err) {
-          /* expected */
-        }
-      });
-
-    const request = MockXMLHttpRequest.mostRecent;
-
-    try {
-      request.onerror((<any>'onerror'));
-    } catch (e) {
-      expect(e.message).to.equal('ajax error');
-    }
-
-    delete root.XMLHttpRequest.prototype.onerror;
-    delete root.XMLHttpRequest.prototype.upload;
   });
 
   describe('ajax.patch', () => {
     it('should create an AjaxObservable with correct options', () => {
-      const body = { foo: 'bar' };
-      const headers = { first: 'first' };
-      // returns Observable, not AjaxObservable, so needs a cast
-      const { request } = <any>ajax.patch('/flibbertyJibbet', body, headers);
+      const expected = { foo: 'bar', hi: 'there you' };
+      let result: AjaxResponse<any>;
+      let complete = false;
+
+      ajax.patch('/flibbertyJibbet', expected).subscribe(
+        (x) => {
+          result = x;
+        },
+        null,
+        () => {
+          complete = true;
+        }
+      );
+
+      const request = MockXMLHttpRequest.mostRecent;
 
       expect(request.method).to.equal('PATCH');
       expect(request.url).to.equal('/flibbertyJibbet');
-      expect(request.body).to.equal(body);
-      expect(request.headers).to.equal(headers);
+      expect(request.requestHeaders).to.deep.equal({
+        'content-type': 'application/json;charset=utf-8',
+        'x-requested-with': 'XMLHttpRequest',
+      });
+
+      request.respondWith({
+        status: 200,
+        responseText: JSON.stringify(expected),
+      });
+
+      expect(request.data).to.equal(JSON.stringify(expected));
+      expect(result!.response).to.deep.equal(expected);
+      expect(complete).to.be.true;
+    });
+  });
+
+  describe('ajax error classes', () => {
+    describe('AjaxError', () => {
+      it('should extend Error class', () => {
+        const error = new AjaxError('Test error', new XMLHttpRequest(), {
+          url: '/',
+          method: 'GET',
+          responseType: 'json',
+          headers: {},
+          withCredentials: false,
+          async: true,
+          timeout: 0,
+          crossDomain: false,
+        });
+        expect(error).to.be.an.instanceOf(Error);
+      });
+    });
+
+    describe('AjaxTimeoutError', () => {
+      it('should extend Error class', () => {
+        const error = new AjaxTimeoutError(new XMLHttpRequest(), {
+          url: '/',
+          method: 'GET',
+          responseType: 'json',
+          headers: {},
+          withCredentials: false,
+          async: true,
+          timeout: 0,
+          crossDomain: false,
+        });
+        expect(error).to.be.an.instanceOf(Error);
+      });
+
+      it('should extend AjaxError class', () => {
+        const error = new AjaxTimeoutError(new XMLHttpRequest(), {
+          url: '/',
+          method: 'GET',
+          responseType: 'json',
+          headers: {},
+          withCredentials: false,
+          async: true,
+          timeout: 0,
+          crossDomain: false,
+        });
+        expect(error).to.be.an.instanceOf(AjaxError);
+      });
+    });
+  });
+
+  it('should error if aborted early', () => {
+    let thrown: any = null;
+
+    ajax({
+      method: 'GET',
+      url: '/flibbertyJibbett',
+    }).subscribe({
+      next: () => {
+        throw new Error('should not be called');
+      },
+      error: (err) => {
+        thrown = err;
+      },
+    });
+
+    const mockXHR = MockXMLHttpRequest.mostRecent;
+    expect(thrown).to.be.null;
+
+    mockXHR.triggerEvent('abort', { type: 'abort' });
+    expect(thrown).to.be.an.instanceOf(AjaxError);
+    expect(thrown.message).to.equal('aborted');
+  });
+
+  describe('with includeDownloadProgress', () => {
+    it('should emit download progress', () => {
+      const results: any[] = [];
+
+      ajax({
+        method: 'GET',
+        url: '/flibbertyJibbett',
+        includeDownloadProgress: true,
+      }).subscribe({
+        next: (value) => results.push(value),
+        complete: () => results.push('done'),
+      });
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+      mockXHR.respondWith(
+        {
+          status: 200,
+          total: 5,
+          loaded: 5,
+          responseText: JSON.stringify({ boo: 'I am a ghost' }),
+        },
+        { uploadProgressTimes: 5, downloadProgressTimes: 5 }
+      );
+
+      const request = {
+        async: true,
+        body: undefined,
+        crossDomain: true,
+        headers: {
+          'x-requested-with': 'XMLHttpRequest',
+        },
+        includeDownloadProgress: true,
+        method: 'GET',
+        responseType: 'json',
+        timeout: 0,
+        url: '/flibbertyJibbett',
+        withCredentials: false,
+      };
+
+      expect(results).to.deep.equal([
+        {
+          type: 'download_loadstart',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 0,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'loadstart', loaded: 0, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 1,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 1, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 2,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 2, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 3,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 3, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 4,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 4, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 5,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 5, total: 5 },
+        },
+        {
+          type: 'download_load',
+          loaded: 5,
+          total: 5,
+          request,
+          originalEvent: { type: 'load', loaded: 5, total: 5 },
+          xhr: mockXHR,
+          response: { boo: 'I am a ghost' },
+          responseHeaders: {},
+          responseType: 'json',
+          status: 200,
+        },
+        'done', // from completion.
+      ]);
+    });
+
+    it('should emit upload and download progress', () => {
+      const results: any[] = [];
+
+      ajax({
+        method: 'GET',
+        url: '/flibbertyJibbett',
+        includeUploadProgress: true,
+        includeDownloadProgress: true,
+      }).subscribe({
+        next: (value) => results.push(value),
+        complete: () => results.push('done'),
+      });
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+      mockXHR.respondWith(
+        {
+          status: 200,
+          total: 5,
+          loaded: 5,
+          responseText: JSON.stringify({ boo: 'I am a ghost' }),
+        },
+        { uploadProgressTimes: 5, downloadProgressTimes: 5 }
+      );
+
+      const request = {
+        async: true,
+        body: undefined,
+        crossDomain: true,
+        headers: {
+          'x-requested-with': 'XMLHttpRequest',
+        },
+        includeUploadProgress: true,
+        includeDownloadProgress: true,
+        method: 'GET',
+        responseType: 'json',
+        timeout: 0,
+        url: '/flibbertyJibbett',
+        withCredentials: false,
+      };
+
+      expect(results).to.deep.equal([
+        {
+          type: 'upload_loadstart',
+          loaded: 0,
+          total: 5,
+          request,
+          status: 0,
+          response: undefined,
+          responseHeaders: {},
+          responseType: 'json',
+          xhr: mockXHR,
+          originalEvent: { type: 'loadstart', loaded: 0, total: 5 },
+        },
+        {
+          type: 'upload_progress',
+          loaded: 1,
+          total: 5,
+          request,
+          status: 0,
+          response: undefined,
+          responseHeaders: {},
+          responseType: 'json',
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 1, total: 5 },
+        },
+        {
+          type: 'upload_progress',
+          loaded: 2,
+          total: 5,
+          request,
+          status: 0,
+          response: undefined,
+          responseHeaders: {},
+          responseType: 'json',
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 2, total: 5 },
+        },
+        {
+          type: 'upload_progress',
+          loaded: 3,
+          total: 5,
+          request,
+          status: 0,
+          response: undefined,
+          responseHeaders: {},
+          responseType: 'json',
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 3, total: 5 },
+        },
+        {
+          type: 'upload_progress',
+          loaded: 4,
+          total: 5,
+          request,
+          status: 0,
+          response: undefined,
+          responseHeaders: {},
+          responseType: 'json',
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 4, total: 5 },
+        },
+        {
+          type: 'upload_progress',
+          loaded: 5,
+          total: 5,
+          request,
+          status: 0,
+          response: undefined,
+          responseHeaders: {},
+          responseType: 'json',
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 5, total: 5 },
+        },
+        {
+          type: 'upload_load',
+          loaded: 5,
+          total: 5,
+          request,
+          status: 0,
+          response: undefined,
+          responseHeaders: {},
+          responseType: 'json',
+          xhr: mockXHR,
+          originalEvent: { type: 'load', loaded: 5, total: 5 },
+        },
+        {
+          type: 'download_loadstart',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 0,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'loadstart', loaded: 0, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 1,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 1, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 2,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 2, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 3,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 3, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 4,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 4, total: 5 },
+        },
+        {
+          type: 'download_progress',
+          responseHeaders: {},
+          responseType: 'json',
+          response: undefined,
+          loaded: 5,
+          total: 5,
+          request,
+          status: 0,
+          xhr: mockXHR,
+          originalEvent: { type: 'progress', loaded: 5, total: 5 },
+        },
+        {
+          type: 'download_load',
+          loaded: 5,
+          total: 5,
+          request,
+          originalEvent: { type: 'load', loaded: 5, total: 5 },
+          xhr: mockXHR,
+          response: { boo: 'I am a ghost' },
+          responseHeaders: {},
+          responseType: 'json',
+          status: 200,
+        },
+        'done', // from completion.
+      ]);
+    });
+  });
+
+  it('should return an object that allows access to response headers', () => {
+    const sentResponseHeaders = {
+      'content-type': 'application/json',
+      'x-custom-header': 'test',
+      'x-headers-are-fun': '<whatever/> {"weird": "things"}',
+    };
+
+    ajax({
+      method: 'GET',
+      url: '/whatever',
+    }).subscribe((response) => {
+      expect(response.responseHeaders).to.deep.equal(sentResponseHeaders);
+    });
+
+    const mockXHR = MockXMLHttpRequest.mostRecent;
+
+    mockXHR.respondWith({
+      status: 200,
+      headers: sentResponseHeaders,
+      responseText: JSON.stringify({ iam: 'tired', and: 'should go to bed', but: 'I am doing open source for no good reason' }),
+    });
+
+    expect(mockXHR.getAllResponseHeaders()).to.equal(`content-type: application/json
+x-custom-header: test
+x-headers-are-fun: <whatever/> {"weird": "things"}`);
+  });
+
+  describe('with queryParams', () => {
+    it('should allow passing of search queryParams as a dictionary', () => {
+      ajax({
+        method: 'GET',
+        url: '/whatever',
+        queryParams: { foo: 'bar', whatever: '123' },
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?foo=bar&whatever=123');
+    });
+
+    it('should allow passing of search queryParams as an entries array', () => {
+      ajax({
+        method: 'GET',
+        url: '/whatever',
+        queryParams: [
+          ['foo', 'bar'],
+          ['whatever', '123'],
+        ],
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?foo=bar&whatever=123');
+    });
+
+    it('should allow passing of search queryParams as a string', () => {
+      ajax({
+        method: 'GET',
+        url: '/whatever',
+        queryParams: '?foo=bar&whatever=123',
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?foo=bar&whatever=123');
+    });
+
+    it('should allow passing of search queryParams as a URLSearchParams object', () => {
+      const queryParams = new URLSearchParams();
+      queryParams.set('foo', 'bar');
+      queryParams.set('whatever', '123');
+      ajax({
+        method: 'GET',
+        url: '/whatever',
+        queryParams,
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?foo=bar&whatever=123');
+    });
+
+    it('should not screw things up if there is an existing search string in the url passed', () => {
+      ajax({
+        method: 'GET',
+        url: '/whatever?jays_face=is+a+param&lol=haha',
+        queryParams: { foo: 'bar', whatever: '123' },
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?jays_face=is+a+param&lol=haha&foo=bar&whatever=123');
+    });
+
+    it('should overwrite existing args from existing search strings in the url passed', () => {
+      ajax({
+        method: 'GET',
+        url: '/whatever?terminator=2&uncle_bob=huh',
+        queryParams: { uncle_bob: '...okayyyyyyy', movie_quote: 'yes' },
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?terminator=2&uncle_bob=...okayyyyyyy&movie_quote=yes');
+    });
+
+    it('should properly encode values', () => {
+      ajax({
+        method: 'GET',
+        url: '/whatever',
+        queryParams: { 'this is a weird param name': '?#* value here rofl !!!' },
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?this+is+a+weird+param+name=%3F%23*+value+here+rofl+%21%21%21');
+    });
+
+    it('should handle dictionaries that have numbers, booleans, and arrays of numbers, strings or booleans', () => {
+      ajax({
+        method: 'GET',
+        url: '/whatever',
+        queryParams: { a: 123, b: true, c: ['one', 'two', 'three'], d: [1, 3, 3, 7], e: [true, false, true] },
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?a=123&b=true&c=one%2Ctwo%2Cthree&d=1%2C3%2C3%2C7&e=true%2Cfalse%2Ctrue');
+    });
+
+    it('should handle entries that have numbers, booleans, and arrays of numbers, strings or booleans', () => {
+      ajax({
+        method: 'GET',
+        url: '/whatever',
+        queryParams: [
+          ['a', 123],
+          ['b', true],
+          ['c', ['one', 'two', 'three']],
+          ['d', [1, 3, 3, 7]],
+          ['e', [true, false, true]],
+        ],
+      }).subscribe();
+
+      const mockXHR = MockXMLHttpRequest.mostRecent;
+
+      mockXHR.respondWith({
+        status: 200,
+        responseText: JSON.stringify({ whatever: 'I want' }),
+      });
+
+      expect(mockXHR.url).to.equal('/whatever?a=123&b=true&c=one%2Ctwo%2Cthree&d=1%2C3%2C3%2C7&e=true%2Cfalse%2Ctrue');
     });
   });
 });
 
-class MockXMLHttpRequest {
+// Some of the older versions of node we test on don't have EventTarget.
+class MockXHREventTarget {
+  private registry = new Map<string, Set<(e: ProgressEvent) => void>>();
+
+  addEventListener(type: string, handler: (e: ProgressEvent) => void) {
+    let handlers = this.registry.get(type);
+    if (!handlers) {
+      this.registry.set(type, (handlers = new Set()));
+    }
+    handlers.add(handler);
+  }
+
+  removeEventListener(type: string, handler: (e: ProgressEvent) => void) {
+    this.registry.get(type)?.delete(handler);
+  }
+
+  dispatchEvent(event: ProgressEvent) {
+    const { type } = event;
+    const handlers = this.registry.get(type);
+    if (handlers) {
+      for (const handler of handlers) {
+        handler(event);
+      }
+    }
+  }
+}
+class MockXMLHttpRequest extends MockXHREventTarget {
+  static readonly DONE = 4;
+
+  /**
+   * Set to `true` to test IE code paths.
+   */
+  static noResponseProp = false;
+
   private static requests: Array<MockXMLHttpRequest> = [];
   private static recentRequest: MockXMLHttpRequest;
 
@@ -1097,25 +1581,23 @@ class MockXMLHttpRequest {
   }
 
   static clearRequest(): void {
+    MockXMLHttpRequest.noResponseProp = false;
     MockXMLHttpRequest.requests.length = 0;
-    MockXMLHttpRequest.recentRequest = null;
+    MockXMLHttpRequest.recentRequest = null!;
   }
 
-  private previousRequest: MockXMLHttpRequest;
-
   protected responseType: string = '';
-  private eventHandlers: Array<any> = [];
   private readyState: number = 0;
 
-  private async: boolean = true;
+  /**
+   * Used to test if `open` was called with `async` true or false.
+   */
+  public async: boolean = true;
 
-  private user: any;
-  private password: any;
-
-  private responseHeaders: any;
   protected status: any;
-  protected responseText: string;
-  protected response: any;
+  // @ts-ignore: Property has no initializer and is not definitely assigned
+  protected responseText: string | undefined;
+  protected response: any = undefined;
 
   url: any;
   method: any;
@@ -1123,18 +1605,27 @@ class MockXMLHttpRequest {
   requestHeaders: any = {};
   withCredentials: boolean = false;
 
+  // @ts-ignore: Property has no initializer and is not definitely assigned
   onreadystatechange: (e: ProgressEvent) => any;
+  // @ts-ignore: Property has no initializer and is not definitely assigned
   onerror: (e: ErrorEvent) => any;
+  // @ts-ignore: Property has no initializer and is not definitely assigned
   onprogress: (e: ProgressEvent) => any;
+  // @ts-ignore: Property has no initializer and is not definitely assigned
   ontimeout: (e: ProgressEvent) => any;
-  upload: XMLHttpRequestUpload = <any>{ };
+
+  upload: XMLHttpRequestUpload = new MockXHREventTarget() as any;
 
   constructor() {
-    this.previousRequest = MockXMLHttpRequest.recentRequest;
+    super();
     MockXMLHttpRequest.recentRequest = this;
     MockXMLHttpRequest.requests.push(this);
+    if (MockXMLHttpRequest.noResponseProp) {
+      delete this['response'];
+    }
   }
 
+  // @ts-ignore: Property has no initializer and is not definitely assigned
   timeout: number;
 
   send(data: any): void {
@@ -1151,19 +1642,21 @@ class MockXMLHttpRequest {
     }
   }
 
-  open(method: any, url: any, async: any, user: any, password: any): void {
+  abort() {
+    // noop
+  }
+
+  open(method: any, url: any, async: any): void {
     this.method = method;
     this.url = url;
     this.async = async;
-    this.user = user;
-    this.password = password;
     this.readyState = 1;
     this.triggerEvent('readystatechange');
     const originalProgressHandler = this.upload.onprogress;
     Object.defineProperty(this.upload, 'progress', {
       get() {
         return originalProgressHandler;
-      }
+      },
     });
   }
 
@@ -1171,98 +1664,106 @@ class MockXMLHttpRequest {
     this.requestHeaders[key] = value;
   }
 
-  protected jsonResponseValue(response: any) {
-    try {
-      this.response = JSON.parse(response.responseText);
-    } catch (err) {
-      throw new Error('unable to JSON.parse: \n' + response.responseText);
-    }
+  private _responseHeaders: any;
+
+  getAllResponseHeaders() {
+    return this._responseHeaders
+      ? Object.entries(this._responseHeaders)
+          .map((entryParts) => entryParts.join(': '))
+          .join('\n')
+      : '';
   }
 
-  protected defaultResponseValue() {
-    if (this.async === false) {
-      this.response = this.responseText;
-    }
-  }
+  respondWith(
+    response: {
+      status?: number;
+      headers?: any;
+      responseText?: string | undefined;
+      total?: number;
+      loaded?: number;
+    },
+    config?: { uploadProgressTimes?: number; downloadProgressTimes?: number }
+  ): void {
+    const { uploadProgressTimes = 0, downloadProgressTimes = 0 } = config ?? {};
 
-  respondWith(response: any, progressTimes?: number): void {
-    if (progressTimes) {
-      for (let i = 1; i <= progressTimes; ++ i) {
-        this.triggerUploadEvent('progress', { type: 'ProgressEvent', total: progressTimes, loaded: i });
+    // Fake our upload progress first, if requested by the test.
+    if (uploadProgressTimes) {
+      this.triggerUploadEvent('loadstart', { type: 'loadstart', total: uploadProgressTimes, loaded: 0 });
+      for (let i = 1; i <= uploadProgressTimes; i++) {
+        this.triggerUploadEvent('progress', { type: 'progress', total: uploadProgressTimes, loaded: i });
+      }
+      this.triggerUploadEvent('load', { type: 'load', total: uploadProgressTimes, loaded: uploadProgressTimes });
+    }
+
+    // Fake our download progress
+    if (downloadProgressTimes) {
+      this.triggerEvent('loadstart', { type: 'loadstart', total: downloadProgressTimes, loaded: 0 });
+      for (let i = 1; i <= downloadProgressTimes; i++) {
+        this.triggerEvent('progress', { type: 'progress', total: downloadProgressTimes, loaded: i });
       }
     }
+
+    // Store our headers locally. This is used in `getAllResponseHeaders` mock impl.
+    this._responseHeaders = response.headers;
+
+    // Set the readyState to DONE (4)
     this.readyState = 4;
-    this.responseHeaders = {
-      'Content-Type': response.contentType || 'text/plain'
-    };
+
+    // Default to OK
     this.status = response.status || 200;
     this.responseText = response.responseText;
-    const responseType = response.responseType !== undefined ? response.responseType : this.responseType;
-    if (!('response' in response)) {
-      switch (responseType) {
+
+    switch (this.responseType) {
       case 'json':
-        this.jsonResponseValue(response);
+        try {
+          this.response = JSON.parse(response.responseText!);
+        } catch (err) {
+          // Ignore this is for testing if we get an invalid server
+          // response somehow, where responseType is "json" but the responseText
+          // is not JSON. In truth, we need to invert these tests to just use
+          // response, because `responseText` is a legacy path.
+          this.response = null;
+        }
         break;
+      case 'arraybuffer':
+      case 'document':
+      case 'blob':
+        throw new Error('Test harness does not support the responseType: ' + this.responseType);
       case 'text':
+      case '':
+      default:
         this.response = response.responseText;
         break;
-      default:
-        this.defaultResponseValue();
-      }
     }
-    // TODO: pass better event to onload.
-    this.triggerEvent('load');
-    this.triggerEvent('readystatechange');
+
+    // We're testing old IE, forget all of that response property stuff.
+    if (MockXMLHttpRequest.noResponseProp) {
+      delete this['response'];
+    }
+
+    this.triggerEvent('load', { type: 'load', total: response.total ?? 0, loaded: response.loaded ?? 0 });
+    this.triggerEvent('readystatechange', { type: 'readystatechange' });
   }
 
-  triggerEvent(name: any, eventObj?: any): void {
+  triggerEvent(this: any, name: any, eventObj?: any): void {
     // TODO: create a better default event
     const e: any = eventObj || { type: name };
 
+    this.dispatchEvent({ type: name, ...eventObj });
+
     if (this['on' + name]) {
       this['on' + name](e);
     }
   }
 
-  triggerUploadEvent(name: any, eventObj?: any): void {
+  triggerUploadEvent(this: any, name: any, eventObj?: any): void {
     // TODO: create a better default event
     const e: any = eventObj || {};
+
+    this.upload.dispatchEvent({ type: name, ...eventObj });
 
     if (this.upload['on' + name]) {
       this.upload['on' + name](e);
-    }
-  }
-}
-
-class MockXMLHttpRequestInternetExplorer extends MockXMLHttpRequest {
-
-  private mockHttp204() {
-    this.responseType = '';
-    this.responseText = '';
-    this.response = '';
-  }
-
-  protected jsonResponseValue(response: any) {
-    if (this.status == 204) {
-      this.mockHttp204();
-      return;
-    }
-    return super.jsonResponseValue(response);
-  }
-
-  protected defaultResponseValue() {
-    if (this.status == 204) {
-      this.mockHttp204();
-      return;
-    }
-    return super.defaultResponseValue();
-  }
-
-  triggerUploadEvent(name: any, eventObj?: any): void {
-    // TODO: create a better default event
-    const e: any = eventObj || {};
-    if (this['on' + name]) {
-      this['on' + name](e);
     }
   }
 }

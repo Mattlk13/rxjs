@@ -1,151 +1,191 @@
+/** @prettier */
 import { expect } from 'chai';
-import { of, concat, timer } from 'rxjs';
-import { auditTime, take, map, mergeMap } from 'rxjs/operators';
+import { of } from 'rxjs';
+import { auditTime, mergeMap } from 'rxjs/operators';
 import { TestScheduler } from 'rxjs/testing';
-import { hot, cold, expectObservable, expectSubscriptions } from '../helpers/marble-testing';
-
-declare function asDiagram(arg: string): Function;
-
-declare const rxTestScheduler: TestScheduler;
+import { observableMatcher } from '../helpers/observableMatcher';
 
 /** @test {auditTime} */
-describe('auditTime operator', () => {
-  asDiagram('auditTime(50)')('should emit the last value in each time window', () => {
-    const e1 =   hot('-a-x-y----b---x-cx---|');
-    const subs =     '^                    !';
-    const expected = '------y--------x-----|';
+describe('auditTime', () => {
+  let testScheduler: TestScheduler;
 
-    const result = e1.pipe(auditTime(50, rxTestScheduler));
-
-    expectObservable(result).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+  beforeEach(() => {
+    testScheduler = new TestScheduler(observableMatcher);
   });
 
-  it('should auditTime events by 50 time units', (done: MochaDone) => {
-    of(1, 2, 3).pipe(
-      auditTime(50)
-    ).subscribe((x: number) => {
-        done(new Error('should not be called'));
-      }, null, () => {
+  it('should emit the last value in each time window', () => {
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a-x-y----b---x-cx---|');
+      const e1subs = '  ^--------------------!';
+      const t = time('   -----|               ');
+      //                          -----|
+      //                                -----|
+      const expected = '------y--------x-----(x|)';
+
+      const result = e1.pipe(auditTime(t));
+
+      expectObservable(result).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
+  });
+
+  it('should auditTime events by 5 time units', (done) => {
+    const expected = 3;
+    of(1, 2, 3)
+      .pipe(auditTime(5))
+      .subscribe((x: number) => {
+        expect(x).to.equal(expected);
         done();
       });
   });
 
   it('should auditTime events multiple times', () => {
-    const expected = ['1-2', '2-2'];
-    concat(
-      timer(0, 10, rxTestScheduler).pipe(
-        take(3),
-        map((x: number) => '1-' + x)
-      ),
-      timer(80, 10, rxTestScheduler).pipe(
-        take(5),
-        map((x: number) => '2-' + x)
-      )
-    ).pipe(
-      auditTime(50, rxTestScheduler)
-    ).subscribe((x: string) => {
-        expect(x).to.equal(expected.shift());
-      });
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -012-----01234---|');
+      const e1subs = '  ^----------------!';
+      const t = time('   -----|           ');
+      //                         -----|
+      const expected = '------2-------4--|';
 
-    rxTestScheduler.flush();
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should delay the source if values are not emitted often enough', () => {
-    const e1 =   hot('-a--------b-----c----|');
-    const subs =     '^                    !';
-    const expected = '------a--------b-----|';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--------b-----c----|');
+      const e1subs = '  ^--------------------!';
+      const t = time('   -----|               ');
+      //                          -----|
+      //                                -----|
+      const expected = '------a--------b-----(c|)';
 
-    expectObservable(e1.pipe(auditTime(50, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should handle a busy producer emitting a regular repeating sequence', () => {
-    const e1 =   hot('abcdefabcdefabcdefabcdefa|');
-    const subs =     '^                        !';
-    const expected = '-----f-----f-----f-----f-|';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  abcdefabcdefabcdefabcdefa|');
+      const e1subs = '  ^------------------------!';
+      const t = time('  -----|                    ');
+      //                      -----|
+      //                            -----|
+      //                                  -----|
+      //                                        -----|
+      const expected = '-----f-----f-----f-----f-----(a|)';
 
-    expectObservable(e1.pipe(auditTime(50, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should complete when source does not emit', () => {
-    const e1 =   hot('-----|');
-    const subs =     '^    !';
-    const expected = '-----|';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -----|');
+      const e1subs = '  ^----!';
+      const t = time('  --|   ');
+      const expected = '-----|';
 
-    expectObservable(e1.pipe(auditTime(50, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should raise error when source does not emit and raises error', () => {
-    const e1 =   hot('-----#');
-    const subs =     '^    !';
-    const expected = '-----#';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -----#');
+      const e1subs = '  ^----!';
+      const t = time('  --|   ');
+      const expected = '-----#';
 
-    expectObservable(e1.pipe(auditTime(10, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should handle an empty source', () => {
-    const e1 =  cold('|');
-    const subs =     '(^!)';
-    const expected = '|';
+    testScheduler.run(({ cold, time, expectObservable, expectSubscriptions }) => {
+      const e1 = cold(' |   ');
+      const e1subs = '  (^!)';
+      const t = time('  ---|');
+      const expected = '|   ';
 
-    expectObservable(e1.pipe(auditTime(30, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should handle a never source', () => {
-    const e1 =  cold('-');
-    const subs =     '^';
-    const expected = '-';
+    testScheduler.run(({ cold, time, expectObservable, expectSubscriptions }) => {
+      const e1 = cold(' -  ');
+      const e1subs = '  ^  ';
+      const t = time('  --|');
+      const expected = '-  ';
 
-    expectObservable(e1.pipe(auditTime(30, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should handle a throw source', () => {
-    const e1 =  cold('#');
-    const subs =     '(^!)';
-    const expected = '#';
+    testScheduler.run(({ cold, time, expectObservable, expectSubscriptions }) => {
+      const e1 = cold(' #   ');
+      const e1subs = '  (^!)';
+      const t = time('  ---|');
+      const expected = '#   ';
 
-    expectObservable(e1.pipe(auditTime(30, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should not complete when source does not complete', () => {
-    const e1 =   hot('-a--(bc)-------d----------------');
-    const unsub =    '                               !';
-    const subs =     '^                              !';
-    const expected = '------c-------------d-----------';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--(bc)-------d----------------');
+      const e1subs = '  ^------------------------------!';
+      const t = time('   -----|                         ');
+      //                               -----|
+      const expected = '------c-------------d-----------';
+      const unsub = '   -------------------------------!';
 
-    expectObservable(e1.pipe(auditTime(50, rxTestScheduler)), unsub).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t)), unsub).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should not break unsubscription chains when result is unsubscribed explicitly', () => {
-    const e1 =   hot('-a--(bc)-------d----------------');
-    const subs =     '^                              !';
-    const expected = '------c-------------d-----------';
-    const unsub =    '                               !';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--(bc)-------d----------------');
+      const e1subs = '  ^------------------------------!';
+      const t = time('   -----|                         ');
+      //                               -----|
+      const expected = '------c-------------d-----------';
+      const unsub = '   -------------------------------!';
 
-    const result = e1.pipe(
-      mergeMap((x: string) => of(x)),
-      auditTime(50, rxTestScheduler),
-      mergeMap((x: string) => of(x))
-    );
+      const result = e1.pipe(
+        mergeMap((x: string) => of(x)),
+        auditTime(t),
+        mergeMap((x: string) => of(x))
+      );
 
-    expectObservable(result, unsub).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(result, unsub).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should auditTime values until source raises error', () => {
-    const e1 =   hot('-a--(bc)-------d---------------#');
-    const subs =     '^                              !';
-    const expected = '------c-------------d----------#';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--(bc)-------d---------------#');
+      const e1subs = '  ^------------------------------!';
+      const t = time('   -----|                         ');
+      //                               -----|
+      const expected = '------c-------------d----------#';
 
-    expectObservable(e1.pipe(auditTime(50, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(subs);
+      expectObservable(e1.pipe(auditTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 });

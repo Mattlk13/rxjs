@@ -1,157 +1,209 @@
+/** @prettier */
 import { expect } from 'chai';
-import { of, Subject } from 'rxjs';
-import { debounceTime, mergeMap } from 'rxjs/operators';
+import { NEVER, of, Subject } from 'rxjs';
+import { AnimationFrameAction } from 'rxjs/internal/scheduler/AnimationFrameAction';
+import { AnimationFrameScheduler } from 'rxjs/internal/scheduler/AnimationFrameScheduler';
+import { debounceTime, mergeMap, startWith } from 'rxjs/operators';
 import { TestScheduler } from 'rxjs/testing';
-import { hot, cold, expectObservable, expectSubscriptions } from '../helpers/marble-testing';
 import { VirtualTimeScheduler } from '../../src/internal/scheduler/VirtualTimeScheduler';
-
-declare function asDiagram(arg: string): Function;
-
-declare const rxTestScheduler: TestScheduler;
+import { observableMatcher } from '../helpers/observableMatcher';
 
 /** @test {debounceTime} */
-describe('debounceTime operator', () => {
-  asDiagram('debounceTime(20)')('should debounce values by 20 time units', () => {
-    const e1 =   hot('-a--bc--d---|');
-    const expected = '---a---c--d-|';
+describe('debounceTime', () => {
+  let testScheduler: TestScheduler;
 
-    expectObservable(e1.pipe(debounceTime(20, rxTestScheduler))).toBe(expected);
+  beforeEach(() => {
+    testScheduler = new TestScheduler(observableMatcher);
   });
 
-  it('should delay all element by the specified time', () => {
-    const e1 =   hot('-a--------b------c----|');
-    const e1subs =   '^                     !';
-    const expected = '------a--------b------(c|)';
+  it('should debounce values by 2 time units', () => {
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--bc--d---|');
+      const e1subs = '  ^-----------!';
+      const expected = '---a---c--d-|';
+      const t = time('  --|');
 
-    expectObservable(e1.pipe(debounceTime(50, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
+  });
+
+  it('should delay all elements by the specified time', () => {
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--------b------c----|');
+      const e1subs = '  ^---------------------!';
+      const expected = '------a--------b------(c|)';
+      const t = time('  -----|');
+
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should debounce and delay element by the specified time', () => {
-    const e1 =   hot('-a--(bc)-----------d-------|');
-    const e1subs =   '^                          !';
-    const expected = '---------c--------------d--|';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--(bc)-----------d-------|');
+      const e1subs = '  ^--------------------------!';
+      const expected = '---------c--------------d--|';
+      const t = time('  -----|');
 
-    expectObservable(e1.pipe(debounceTime(50, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should complete when source does not emit', () => {
-    const e1 =   hot('-----|');
-    const e1subs =   '^    !';
-    const expected = '-----|';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -----|');
+      const e1subs = '  ^----!';
+      const expected = '-----|';
+      const t = time('  -|');
 
-    expectObservable(e1.pipe(debounceTime(10, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should complete when source is empty', () => {
-    const e1 =  cold('|');
-    const e1subs =   '(^!)';
-    const expected = '|';
+    testScheduler.run(({ cold, time, expectObservable, expectSubscriptions }) => {
+      const e1 = cold(' |');
+      const e1subs = '  (^!)';
+      const expected = '|';
+      const t = time('  -|');
 
-    expectObservable(e1.pipe(debounceTime(10, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should raise error when source does not emit and raises error', () => {
-    const e1 =   hot('-----#');
-    const e1subs =   '^    !';
-    const expected = '-----#';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -----#');
+      const e1subs = '  ^----!';
+      const expected = '-----#';
+      const t = time('  -|');
 
-    expectObservable(e1.pipe(debounceTime(10, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should raise error when source throws', () => {
-    const e1 =  cold('#');
-    const e1subs =   '(^!)';
-    const expected = '#';
+    testScheduler.run(({ cold, time, expectObservable, expectSubscriptions }) => {
+      const e1 = cold(' #');
+      const e1subs = '  (^!)';
+      const expected = '#';
+      const t = time('  -|');
 
-    expectObservable(e1.pipe(debounceTime(10, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should allow unsubscribing early and explicitly', () => {
-    const e1 =   hot('--a--bc--d----|');
-    const e1subs =   '^      !       ';
-    const expected = '----a---       ';
-    const unsub =    '       !       ';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  --a--bc--d----|');
+      const e1subs = '  ^------!       ';
+      const expected = '----a---       ';
+      const unsub = '   -------!       ';
+      const t = time('  --|');
 
-    const result = e1.pipe(debounceTime(20, rxTestScheduler));
+      const result = e1.pipe(debounceTime(t));
 
-    expectObservable(result, unsub).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(result, unsub).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should not break unsubscription chains when unsubscribed explicitly', () => {
-    const e1 =   hot('--a--bc--d----|');
-    const e1subs =   '^      !       ';
-    const expected = '----a---       ';
-    const unsub =    '       !       ';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  --a--bc--d----|');
+      const e1subs = '  ^------!       ';
+      const expected = '----a---       ';
+      const unsub = '   -------!       ';
+      const t = time('  --|');
 
-    const result = e1.pipe(
-      mergeMap((x: any) => of(x)),
-      debounceTime(20, rxTestScheduler),
-      mergeMap((x: any) => of(x))
-    );
+      const result = e1.pipe(
+        mergeMap((x: any) => of(x)),
+        debounceTime(t),
+        mergeMap((x: any) => of(x))
+      );
 
-    expectObservable(result, unsub).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(result, unsub).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should debounce and does not complete when source does not completes', () => {
-    const e1 =   hot('-a--(bc)-----------d-------');
-    const e1subs =   '^                          ';
-    const expected = '---------c--------------d--';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--(bc)-----------d-------');
+      const e1subs = '  ^--------------------------';
+      const expected = '---------c--------------d--';
+      const t = time('  -----|');
 
-    expectObservable(e1.pipe(debounceTime(50, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should not completes when source does not completes', () => {
-    const e1 =   hot('-');
-    const e1subs =   '^';
-    const expected = '-';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -');
+      const e1subs = '  ^';
+      const expected = '-';
+      const t = time('  -|');
 
-    expectObservable(e1.pipe(debounceTime(10, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should not completes when source never completes', () => {
-    const e1 =  cold('-');
-    const e1subs =   '^';
-    const expected = '-';
+    testScheduler.run(({ cold, time, expectObservable, expectSubscriptions }) => {
+      const e1 = cold(' -');
+      const e1subs = '  ^';
+      const expected = '-';
+      const t = time('  -|');
 
-    expectObservable(e1.pipe(debounceTime(10, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
-  it('should delay all element until source raises error', () => {
-    const e1 =   hot('-a--------b------c----#');
-    const e1subs =   '^                     !';
-    const expected = '------a--------b------#';
+  it('should delay all elements until source raises error', () => {
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  -a--------b------c----#');
+      const e1subs = '  ^---------------------!';
+      const expected = '------a--------b------#';
+      const t = time('  -----|');
 
-    expectObservable(e1.pipe(debounceTime(50, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should debounce all elements while source emits within given time', () => {
-    const e1 =   hot('--a--b--c--d--e--f--g--h-|');
-    const e1subs =   '^                        !';
-    const expected = '-------------------------(h|)';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  --a--b--c--d--e--f--g--h-|');
+      const e1subs = '  ^------------------------!';
+      const expected = '-------------------------(h|)';
+      const t = time('  ----|');
 
-    expectObservable(e1.pipe(debounceTime(40, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should debounce all element while source emits within given time until raises error', () => {
-    const e1 =   hot('--a--b--c--d--e--f--g--h-#');
-    const e1subs =   '^                        !';
-    const expected = '-------------------------#';
+    testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+      const e1 = hot('  --a--b--c--d--e--f--g--h-#');
+      const e1subs = '  ^------------------------!';
+      const expected = '-------------------------#';
+      const t = time('  ----|');
 
-    expectObservable(e1.pipe(debounceTime(40, rxTestScheduler))).toBe(expected);
-    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+      expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+      expectSubscriptions(e1.subscriptions).toBe(e1subs);
+    });
   });
 
   it('should debounce correctly when synchronously reentered', () => {
@@ -159,7 +211,7 @@ describe('debounceTime operator', () => {
     const source = new Subject<number>();
     const scheduler = new VirtualTimeScheduler();
 
-    source.pipe(debounceTime(0, scheduler)).subscribe(value => {
+    source.pipe(debounceTime(0, scheduler)).subscribe((value) => {
       results.push(value);
 
       if (value === 1) {
@@ -170,5 +222,22 @@ describe('debounceTime operator', () => {
     scheduler.flush();
 
     expect(results).to.deep.equal([1, 2]);
+  });
+
+  it('should unsubscribe from the scheduled debounce action when downstream unsubscribes', () => {
+    const scheduler = new AnimationFrameScheduler(AnimationFrameAction);
+
+    expect(scheduler._scheduled).to.not.exist;
+    expect(scheduler.actions).to.be.empty;
+
+    const subscription = NEVER.pipe(startWith(1), debounceTime(0, scheduler)).subscribe();
+
+    expect(scheduler._scheduled).to.exist;
+    expect(scheduler.actions.length).to.equal(1);
+
+    subscription.unsubscribe();
+
+    expect(scheduler._scheduled).to.not.exist;
+    expect(scheduler.actions).to.be.empty;
   });
 });

@@ -1,13 +1,11 @@
 import { expect } from 'chai';
 import { cold, expectObservable, expectSubscriptions } from '../helpers/marble-testing';
-import { refCount, publish, publishReplay, first } from 'rxjs/operators';
-import { NEVER, noop, Observable, Observer, Subject, ConnectableObservable } from 'rxjs';
-
-declare function asDiagram(arg: string): Function;
+import { refCount, publish, publishReplay, first, multicast, take } from 'rxjs/operators';
+import { NEVER, noop, Observable, Subject } from 'rxjs';
 
 /** @test {refCount} */
 describe('refCount', () => {
-  asDiagram('refCount')('should turn a multicasted Observable an automatically ' +
+  it('should turn a multicasted Observable an automatically ' +
   '(dis)connecting hot one', () => {
     const source = cold('--1-2---3-4--5-|');
     const sourceSubs =  '^              !';
@@ -45,7 +43,7 @@ describe('refCount', () => {
     sub3.unsubscribe();
   });
 
-  it('should unsub from the source when all other subscriptions are unsubbed', (done: MochaDone) => {
+  it('should unsub from the source when all other subscriptions are unsubbed', (done) => {
     let unsubscribeCalled = false;
     const connectable = new Observable<boolean>(observer => {
       observer.next(true);

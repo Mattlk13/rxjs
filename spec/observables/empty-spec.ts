@@ -1,17 +1,27 @@
+/** @prettier */
 import { expect } from 'chai';
-import { expectObservable } from '../helpers/marble-testing';
 import { empty, EMPTY } from 'rxjs';
 import { TestScheduler } from 'rxjs/testing';
-
-declare const asDiagram: any;
-declare const rxTestScheduler: TestScheduler;
+import { observableMatcher } from '../helpers/observableMatcher';
 
 /** @test {empty} */
 describe('empty', () => {
-  asDiagram('empty')('should create a cold observable with only complete', () => {
-    const expected = '|';
-    const e1 = empty();
-    expectObservable(e1).toBe(expected);
+  let rxTestScheduler: TestScheduler;
+
+  beforeEach(() => {
+    rxTestScheduler = new TestScheduler(observableMatcher);
+  });
+
+  it('should return EMPTY', () => {
+    expect(empty()).to.equal(EMPTY);
+  });
+
+  it('should create a cold observable with only complete', () => {
+    rxTestScheduler.run(({ expectObservable }) => {
+      const expected = '|';
+      const e1 = empty();
+      expectObservable(e1).toBe(expected);
+    });
   });
 
   it('should return the same instance EMPTY', () => {
@@ -24,7 +34,9 @@ describe('empty', () => {
     const source = empty();
     let hit = false;
     source.subscribe({
-      complete() { hit = true; }
+      complete() {
+        hit = true;
+      },
     });
     expect(hit).to.be.true;
   });
@@ -37,7 +49,9 @@ describe('empty', () => {
     const source = empty(rxTestScheduler);
     let hit = false;
     source.subscribe({
-      complete() { hit = true; }
+      complete() {
+        hit = true;
+      },
     });
     expect(hit).to.be.false;
     rxTestScheduler.flush();

@@ -12,6 +12,7 @@ describe('operators/index', () => {
     expect(index.bufferWhen).to.exist;
     expect(index.catchError).to.exist;
     expect(index.combineAll).to.exist;
+    expect(index.combineLatestAll).to.exist;
     expect(index.concatAll).to.exist;
     expect(index.concatMap).to.exist;
     expect(index.concatMapTo).to.exist;
@@ -28,6 +29,7 @@ describe('operators/index', () => {
     expect(index.elementAt).to.exist;
     expect(index.every).to.exist;
     expect(index.exhaust).to.exist;
+    expect(index.exhaustAll).to.exist;
     expect(index.exhaustMap).to.exist;
     expect(index.expand).to.exist;
     expect(index.filter).to.exist;
@@ -45,6 +47,7 @@ describe('operators/index', () => {
     expect(index.max).to.exist;
     expect(index.mergeAll).to.exist;
     expect(index.mergeMap).to.exist;
+    expect(index.flatMap).to.exist;
     expect(index.mergeMap).to.exist;
     expect(index.mergeMapTo).to.exist;
     expect(index.mergeScan).to.exist;
@@ -77,6 +80,7 @@ describe('operators/index', () => {
     expect(index.skipWhile).to.exist;
     expect(index.startWith).to.exist;
     expect(index.switchAll).to.exist;
+    expect(index.switchScan).to.exist;
     expect(index.switchMap).to.exist;
     expect(index.switchMapTo).to.exist;
     expect(index.take).to.exist;

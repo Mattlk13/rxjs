@@ -21,8 +21,8 @@ function a<I extends string, O extends string>(input: I, output: O): UnaryFuncti
   return i => output;
 }
 
-it('should infer {} for no arguments', () => {
-  const o = pipe(); // $ExpectType UnaryFunction<{}, {}>
+it('should infer unknown for no arguments', () => {
+  const o = pipe(); // $ExpectType <T>(x: T) => T
 });
 
 it('should infer for 1 argument', () => {
@@ -61,8 +61,8 @@ it('should infer for 9 arguments', () => {
   const o = pipe(a('0', '1'), a('1', '2'), a('2', '3'), a('3', '4'), a('4', '5'), a('5', '6'), a('6', '7'), a('7', '8'), a('8', '9')); // $ExpectType UnaryFunction<"0", "9">
 });
 
-it('should infer {} for more than 9 arguments', () => {
-  const o =  pipe(a('0', '1'), a('1', '2'), a('2', '3'), a('3', '4'), a('4', '5'), a('5', '6'), a('6', '7'), a('7', '8'), a('8', '9'), a('9', '10'));  // $ExpectType UnaryFunction<"0", {}>
+it('should infer unknown for more than 9 arguments', () => {
+  const o =  pipe(a('0', '1'), a('1', '2'), a('2', '3'), a('3', '4'), a('4', '5'), a('5', '6'), a('6', '7'), a('7', '8'), a('8', '9'), a('9', '10'));  // $ExpectType UnaryFunction<"0", unknown>
 });
 
 it('should require a type assertion for more than 9 arguments', () => {
@@ -115,12 +115,12 @@ it('should return an explicit Observable type', () => {
   const o = of('foo').pipe(staticPipe); // $ExpectType Observable<string>
 });
 
-it('should return Observable<{}> when T cannot be inferred', () => {
+it('should return Observable<unknown> when T cannot be inferred', () => {
   const customOperator = <T>() => (a: Observable<T>) => a;
 
-  // type can't be possibly be inferred here, so it's {} instead of T.
+  // type can't be possibly be inferred here
   const staticPipe = pipe(customOperator());
-  const o = of('foo').pipe(staticPipe); // $ExpectType Observable<{}>
+  const o = of('foo').pipe(staticPipe); // $ExpectType Observable<unknown>
 });
 
 it('should return a non-narrowed type', () => {

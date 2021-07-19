@@ -1,10 +1,6 @@
 import { expect } from 'chai';
 import { hot, cold, expectObservable, expectSubscriptions } from '../helpers/marble-testing';
-import { queueScheduler as rxQueueScheduler, zip, from, of, Observable } from 'rxjs';
-
-declare const type: Function;
-
-declare const Symbol: any;
+import { queueScheduler as rxQueueScheduler, zip, from, of } from 'rxjs';
 
 const queueScheduler = rxQueueScheduler;
 
@@ -23,7 +19,7 @@ describe('static zip', () => {
     expectSubscriptions(b.subscriptions).toBe(bsubs);
   });
 
-  it('should zip the provided observables', (done: MochaDone) => {
+  it('should zip the provided observables', (done) => {
     const expected = ['a1', 'b2', 'c3'];
     let i = 0;
 
@@ -78,18 +74,15 @@ describe('static zip', () => {
 
   describe('with iterables', () => {
     it('should zip them with values', () => {
-      const myIterator = <any>{
-        count: 0,
-        next: function () {
-          return { value: this.count++, done: false };
+      const myIterator = (function *() {
+        for (let i = 0; i < 4; i++) {
+          yield i;
         }
-      };
-
-      myIterator[Symbol.iterator] = function () { return this; };
+      })();
 
       const e1 =   hot('---a---b---c---d---|');
-      const e1subs =   '^                  !';
-      const expected = '---w---x---y---z---|';
+      const e1subs =   '^              !';
+      const expected = '---w---x---y---(z|)';
 
       const values = {
         w: ['a', 0],
@@ -100,37 +93,6 @@ describe('static zip', () => {
 
       expectObservable(zip(e1, myIterator)).toBe(expected, values);
       expectSubscriptions(e1.subscriptions).toBe(e1subs);
-    });
-
-    it('should only call `next` as needed', () => {
-      let nextCalled = 0;
-      const myIterator = <any>{
-        count: 0,
-        next() {
-          nextCalled++;
-          return { value: this.count++, done: false };
-        }
-      };
-      myIterator[Symbol.iterator] = function() {
-        return this;
-      };
-
-      zip(of(1, 2, 3), myIterator)
-        .subscribe();
-
-      // since zip will call `next()` in advance, total calls when
-      // zipped with 3 other values should be 4.
-      expect(nextCalled).to.equal(4);
-    });
-
-    it('should work with never observable and empty iterable', () => {
-      const a = cold(  '-');
-      const asubs =    '^';
-      const b: number[] = [];
-      const expected = '-';
-
-      expectObservable(zip(a, b)).toBe(expected);
-      expectSubscriptions(a.subscriptions).toBe(asubs);
     });
 
     it('should work with empty observable and empty iterable', () => {
@@ -153,11 +115,11 @@ describe('static zip', () => {
       expectSubscriptions(a.subscriptions).toBe(asubs);
     });
 
-    it('should work with non-empty observable and empty iterable', () => {
+    it('should complete instantly if given an empty iterable', () => {
       const a = hot('---^----a--|');
-      const asubs =    '^       !';
+      const asubs =    '(^!)';
       const b: number[] = [];
-      const expected = '--------|';
+      const expected = '|';
 
       expectObservable(zip(a, b)).toBe(expected);
       expectSubscriptions(a.subscriptions).toBe(asubs);
@@ -180,16 +142,6 @@ describe('static zip', () => {
       const expected = '-----(x|)';
 
       expectObservable(zip(a, b)).toBe(expected, { x: ['1', 2] });
-      expectSubscriptions(a.subscriptions).toBe(asubs);
-    });
-
-    it('should work with non-empty observable and empty iterable', () => {
-      const a = hot('---^----#');
-      const asubs =    '^    !';
-      const b: number[] = [];
-      const expected = '-----#';
-
-      expectObservable(zip(a, b)).toBe(expected);
       expectSubscriptions(a.subscriptions).toBe(asubs);
     });
 
@@ -461,7 +413,7 @@ describe('static zip', () => {
   it('should work with empty and error', () => {
     const a = cold(  '|');
     const asubs =    '(^!)';
-    const b = hot(   '------#', null, 'too bad');
+    const b = hot(   '------#', undefined, 'too bad');
     const bsubs =    '(^!)';
     const expected = '|';
 
@@ -471,7 +423,7 @@ describe('static zip', () => {
   });
 
   it('should work with error and empty', () => {
-    const a = hot(   '------#', null, 'too bad');
+    const a = hot(   '------#', undefined, 'too bad');
     const asubs =    '(^!)';
     const b = cold(  '|');
     const bsubs =    '(^!)';
@@ -519,9 +471,9 @@ describe('static zip', () => {
   });
 
   it('should work with error and error', () => {
-    const a =    hot('------#', null, 'too bad');
+    const a =    hot('------#', undefined, 'too bad');
     const asubs =    '^     !';
-    const b =    hot('----------#', null, 'too bad 2');
+    const b =    hot('----------#', undefined, 'too bad 2');
     const bsubs =    '^     !';
     const expected = '------#';
 
@@ -566,9 +518,9 @@ describe('static zip', () => {
     expectSubscriptions(b.subscriptions).toBe(bsubs);
   });
 
-  it('should combine an immediately-scheduled source with an immediately-scheduled second', (done: MochaDone) => {
-    const a = of<number>(1, 2, 3, queueScheduler);
-    const b = of<number>(4, 5, 6, 7, 8, queueScheduler);
+  it('should combine an immediately-scheduled source with an immediately-scheduled second', (done) => {
+    const a = of(1, 2, 3, queueScheduler);
+    const b = of(4, 5, 6, 7, 8, queueScheduler);
     const r = [[1, 4], [2, 5], [3, 6]];
     let i = 0;
 
@@ -577,52 +529,31 @@ describe('static zip', () => {
     }, null, done);
   });
 
-  type('should support observables', () => {
-    /* tslint:disable:no-unused-variable */
-    let a: Observable<number>;
-    let b: Observable<string>;
-    let c: Observable<boolean>;
-    let o1: Observable<[number, string, boolean]> = zip(a, b, c);
-    /* tslint:enable:no-unused-variable */
+  it('should be able to zip all iterables', () => {
+    const results: any[] = [];
+    zip('abc', '123', 'xyz').subscribe({
+      next: value => results.push(value),
+      complete: () => results.push('complete')
+    });
+    expect(results).to.deep.equal([
+      ['a','1','x'],
+      ['b','2','y'],
+      ['c','3','z'],
+      'complete'
+    ]);
   });
 
-  type('should support mixed observables and promises', () => {
-    /* tslint:disable:no-unused-variable */
-    let a: Promise<number>;
-    let b: Observable<string>;
-    let c: Promise<boolean>;
-    let d: Observable<string[]>;
-    let o1: Observable<[number, string, boolean, string[]]> = zip(a, b, c, d);
-    /* tslint:enable:no-unused-variable */
-  });
+  it('should return EMPTY if passed an empty array as the only argument', () => {
+    const results: string[] = [];
+    zip([]).subscribe({
+      next: () => {
+        throw new Error('should not emit')
+      },
+      complete: () => {
+        results.push('done');
+      }
+    });
 
-  type('should support arrays of promises', () => {
-    /* tslint:disable:no-unused-variable */
-    let a: Promise<number>[];
-    let o1: Observable<number[]> = zip(a);
-    let o2: Observable<number[]> = zip(...a);
-    /* tslint:enable:no-unused-variable */
-  });
-
-  type('should support arrays of observables', () => {
-    /* tslint:disable:no-unused-variable */
-    let a: Observable<number>[];
-    let o1: Observable<number[]> = zip(a);
-    let o2: Observable<number[]> = zip(...a);
-    /* tslint:enable:no-unused-variable */
-  });
-
-  type('should return Array<T> when given a single promise', () => {
-    /* tslint:disable:no-unused-variable */
-    let a: Promise<number>;
-    let o1: Observable<number[]> = zip(a);
-    /* tslint:enable:no-unused-variable */
-  });
-
-  type('should return Array<T> when given a single observable', () => {
-    /* tslint:disable:no-unused-variable */
-    let a: Observable<number>;
-    let o1: Observable<number[]> = zip(a);
-    /* tslint:enable:no-unused-variable */
+    expect(results).to.deep.equal(['done']);
   });
 });

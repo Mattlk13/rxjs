@@ -6,13 +6,11 @@ import { fromEventPattern, noop, NEVER, timer } from 'rxjs';
 import { mapTo, take, concat } from 'rxjs/operators';
 import { TestScheduler } from 'rxjs/testing';
 
-declare function asDiagram(arg: string): Function;
 declare const rxTestScheduler: TestScheduler;
 
 /** @test {fromEventPattern} */
 describe('fromEventPattern', () => {
-  asDiagram('fromEventPattern(addHandler, removeHandler)')
-  ('should create an observable from the handler API', () => {
+  it('should create an observable from the handler API', () => {
     function addHandler(h: any) {
       timer(50, 20, rxTestScheduler).pipe(
         mapTo('ev'),
@@ -61,7 +59,7 @@ describe('fromEventPattern', () => {
     expect(call).calledWith(sinon.match.any, expected);
   });
 
-  it('should send errors in addHandler down the error path', (done: MochaDone) => {
+  it('should send errors in addHandler down the error path', (done) => {
     fromEventPattern((h: any) => {
       throw 'bad';
     }, noop).subscribe(
@@ -72,7 +70,7 @@ describe('fromEventPattern', () => {
       }, () => done(new Error('should not be called')));
   });
 
-  it('should accept a selector that maps outgoing values', (done: MochaDone) => {
+  it('should accept a selector that maps outgoing values', (done) => {
     let target: any;
     const trigger = function (...args: any[]) {
       if (target) {
@@ -102,7 +100,7 @@ describe('fromEventPattern', () => {
     trigger('test', 'me');
   });
 
-  it('should send errors in the selector down the error path', (done: MochaDone) => {
+  it('should send errors in the selector down the error path', (done) => {
     let target: any;
     const trigger = (value: any) => {
       if (target) {

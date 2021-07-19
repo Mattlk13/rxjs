@@ -191,4 +191,63 @@ describe('AsyncSubject', () => {
     subject.subscribe(observer);
     expect(observer.results).to.deep.equal([expected]);
   });
+
+  it('should not be reentrant via complete', () => {
+    const subject = new AsyncSubject<number>();
+    let calls = 0;
+    subject.subscribe({
+      next: value => {
+        calls++;
+        if (calls < 2) {
+          // if this is more than 1, we're reentrant, and that's bad.
+          subject.complete();
+        }
+      }
+    });
+
+    subject.next(1);
+    subject.complete();
+
+    expect(calls).to.equal(1);
+  });
+
+  it('should not be reentrant via next', () => {
+    const subject = new AsyncSubject<number>();
+    let calls = 0;
+    subject.subscribe({
+      next: value => {
+        calls++;
+        if (calls < 2) {
+          // if this is more than 1, we're reentrant, and that's bad.
+          subject.next(value + 1);
+        }
+      }
+    });
+
+    subject.next(1);
+    subject.complete();
+
+    expect(calls).to.equal(1);
+  });
+
+  it('should allow reentrant subscriptions', () => {
+    const subject = new AsyncSubject<number>()
+    let results: any[] = [];
+
+    subject.subscribe({
+      next: (value) => {
+        subject.subscribe({
+          next: value => results.push('inner: ' + (value + value)),
+          complete: () => results.push('inner: done')
+        });
+        results.push('outer: ' + value);
+      },
+      complete: () => results.push('outer: done')
+    });
+
+    subject.next(1);
+    expect(results).to.deep.equal([]);
+    subject.complete();
+    expect(results).to.deep.equal(['inner: 2', 'inner: done', 'outer: 1', 'outer: done']);
+  });
 });

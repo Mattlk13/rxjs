@@ -1,16 +1,15 @@
 import { expect } from 'chai';
-import { groupBy, delay, tap, map, take, mergeMap, materialize, skip } from 'rxjs/operators';
+import { groupBy, delay, tap, map, take, mergeMap, materialize, skip, ignoreElements } from 'rxjs/operators';
 import { TestScheduler } from 'rxjs/testing';
-import { ReplaySubject, of, GroupedObservable, Observable, Operator, Observer } from 'rxjs';
+import { ReplaySubject, of, Observable, Operator, Observer, interval, Subject } from 'rxjs';
 import { hot, cold, expectObservable, expectSubscriptions } from '../helpers/marble-testing';
-
-declare function asDiagram(arg: string): Function;
+import { createNotification } from 'rxjs/internal/NotificationFactories';
 
 declare const rxTestScheduler: TestScheduler;
 
 /** @test {groupBy} */
 describe('groupBy operator', () => {
-  asDiagram('groupBy(i => i % 2)')('should group numbers by odd/even', () => {
+  it('should group numbers by odd/even', () => {
     const e1 =   hot('--1---2---3---4---5---|');
     const expected = '--x---y---------------|';
     const x = cold(    '1-------3-------5---|');
@@ -26,8 +25,8 @@ describe('groupBy operator', () => {
     return str.split('').reverse().join('');
   }
 
-  function mapObject(obj: object, fn: Function) {
-    const out = {};
+  function mapObject(obj: Record<string, any>, fn: Function) {
+    const out: Record<string, any> = {};
     for (const p in obj) {
       if (obj.hasOwnProperty(p)) {
         out[p] = fn(obj[p]);
@@ -36,16 +35,16 @@ describe('groupBy operator', () => {
     return out;
   }
 
-  it('should group values', (done: MochaDone) => {
+  it('should group values', (done) => {
     const expectedGroups = [
       { key: 1, values: [1, 3] },
       { key: 0, values: [2] }
     ];
 
     of(1, 2, 3).pipe(
-      groupBy((x: number) => x % 2)
+      groupBy((x) => x % 2)
     ).subscribe((g: any) => {
-        const expectedGroup = expectedGroups.shift();
+        const expectedGroup = expectedGroups.shift()!;
         expect(g.key).to.equal(expectedGroup.key);
 
         g.subscribe((x: any) => {
@@ -54,16 +53,16 @@ describe('groupBy operator', () => {
       }, null, done);
   });
 
-  it('should group values with an element selector', (done: MochaDone) => {
+  it('should group values with an element selector', (done) => {
     const expectedGroups = [
       { key: 1, values: ['1!', '3!'] },
       { key: 0, values: ['2!'] }
     ];
 
     of(1, 2, 3).pipe(
-      groupBy((x: number) => x % 2, (x: number) => x + '!')
+      groupBy((x) => x % 2, (x) => x + '!')
     ).subscribe((g: any) => {
-        const expectedGroup = expectedGroups.shift();
+        const expectedGroup = expectedGroups.shift()!;
         expect(g.key).to.equal(expectedGroup.key);
 
         g.subscribe((x: any) => {
@@ -83,36 +82,37 @@ describe('groupBy operator', () => {
     const resultingGroups: { key: number, values: number [] }[] = [];
 
     of(1, 2, 3, 4, 5, 6).pipe(
-      groupBy(
-        (x: number) => x % 2,
-        (x: number) => x,
-        (g: any) => g.pipe(skip(1)))
-      ).subscribe((g: any) => {
-        let group = { key: g.key, values: [] as number[] };
+      groupBy(x => x % 2, {
+        duration: g => g.pipe(skip(1))
+      })
+    ).subscribe((g: any) => {
+      let group = { key: g.key, values: [] as number[] };
 
-        g.subscribe((x: any) => {
-          group.values.push(x);
-        });
-
-        resultingGroups.push(group);
+      g.subscribe((x: any) => {
+        group.values.push(x);
       });
 
-      expect(resultingGroups).to.deep.equal(expectedGroups);
+      resultingGroups.push(group);
+    });
+
+    expect(resultingGroups).to.deep.equal(expectedGroups);
   });
 
-  it('should group values with a subject selector', (done: MochaDone) => {
+  it('should group values with a subject selector', (done) => {
     const expectedGroups = [
       { key: 1, values: [3] },
       { key: 0, values: [2] }
     ];
 
     of(1, 2, 3).pipe(
-      groupBy((x: number) => x % 2, null, null, () => new ReplaySubject(1)),
+      groupBy(x => x % 2, {
+        connector: () => new ReplaySubject(1),
+      }),
       // Ensure each inner group reaches the destination after the first event
       // has been next'd to the group
       delay(5)
     ).subscribe((g: any) => {
-        const expectedGroup = expectedGroups.shift();
+        const expectedGroup = expectedGroups.shift()!;
         expect(g.key).to.equal(expectedGroup.key);
 
         g.subscribe((x: any) => {
@@ -217,7 +217,7 @@ describe('groupBy operator', () => {
       groupBy((val: string) => val.toLowerCase().trim()),
       tap((group: any) => {
         expect(group.key).to.equal('foo');
-        expect(group instanceof GroupedObservable).to.be.true;
+        expect(group instanceof Observable).to.be.true;
       }),
       map((group: any) => { return group.key; })
     );
@@ -549,18 +549,15 @@ describe('groupBy operator', () => {
       .unsubscribedFrame;
 
     const source = e1.pipe(
-      groupBy((val: string) => val.toLowerCase().trim()),
-      map((group: any) => {
+      groupBy((val) => val.toLowerCase().trim()),
+      map((group) => {
         const arr: any[] = [];
 
         const subscription = group.pipe(
-          materialize(),
-          map((notification: Notification) => {
-            return { frame: rxTestScheduler.frame, notification: notification };
-          })
-        ).subscribe((value: any) => {
-            arr.push(value);
-          });
+          phonyMarbelize()
+        ).subscribe((value) => {
+          arr.push(value);
+        });
 
         if (group.key === 'foo') {
           rxTestScheduler.schedule(() => {
@@ -607,7 +604,7 @@ describe('groupBy operator', () => {
       z: TestScheduler.parseMarbles(z, values)
     };
 
-    const unsubscriptionFrames = {
+    const unsubscriptionFrames: Record<string, number> = {
       foo: TestScheduler.parseMarblesAsSubscriptions(unsubw).unsubscribedFrame,
       bar: TestScheduler.parseMarblesAsSubscriptions(unsubx).unsubscribedFrame,
       baz: TestScheduler.parseMarblesAsSubscriptions(unsuby).unsubscribedFrame,
@@ -620,10 +617,7 @@ describe('groupBy operator', () => {
         const arr: any[] = [];
 
         const subscription = group.pipe(
-          materialize(),
-          map((notification: Notification) => {
-            return { frame: rxTestScheduler.frame, notification: notification };
-          })
+          phonyMarbelize()
         ).subscribe((value: any) => {
             arr.push(value);
           });
@@ -809,11 +803,11 @@ describe('groupBy operator', () => {
     const expectedValues = { v: v, w: w, x: x, y: y, z: z };
 
     const source = e1
-      .pipe(groupBy(
-        (val: string) => val.toLowerCase().trim(),
-        (val: string) => val,
-        (group: any) => group.pipe(skip(2))
-      ));
+      .pipe(
+        groupBy(val => val.toLowerCase().trim(), {
+          duration: group => group.pipe(skip(2)),
+        })
+      );
 
     expectObservable(source).toBe(expected, expectedValues);
     expectSubscriptions(e1.subscriptions).toBe(e1subs);
@@ -843,11 +837,9 @@ describe('groupBy operator', () => {
     const expectedValues = { v: v, w: w, x: x };
 
     const source = e1
-      .pipe(groupBy(
-        (val: string) => val.toLowerCase().trim(),
-        (val: string) => val,
-        (group: any) =>  group.pipe(skip(2))
-      ));
+      .pipe(groupBy(val => val.toLowerCase().trim(), {
+        duration: group =>  group.pipe(skip(2))
+      }));
 
     expectObservable(source, unsub).toBe(expected, expectedValues);
   });
@@ -886,22 +878,17 @@ describe('groupBy operator', () => {
       .unsubscribedFrame;
 
     const source = e1.pipe(
-      groupBy(
-        (val: string) => val.toLowerCase().trim(),
-        (val: string) => val,
-        (group: any) => group.pipe(skip(2))
-      ),
-      map((group: any) => {
+      groupBy(val => val.toLowerCase().trim(), {
+        duration: group => group.pipe(skip(2))
+      }),
+      map((group) => {
         const arr: any[] = [];
 
         const subscription = group.pipe(
-          materialize(),
-          map((notification: Notification) => {
-            return { frame: rxTestScheduler.frame, notification: notification };
-          })
-        ).subscribe((value: any) => {
-            arr.push(value);
-          });
+          phonyMarbelize()
+        ).subscribe((value) => {
+          arr.push(value);
+        });
 
         rxTestScheduler.schedule(() => {
           subscription.unsubscribe();
@@ -933,11 +920,9 @@ describe('groupBy operator', () => {
       .parseMarblesAsSubscriptions(sub)
       .unsubscribedFrame;
 
-    obs.pipe(groupBy(
-      (val: string) => val,
-      (val: string) => val,
-      (group: any) => durations[group.key]
-    )).subscribe();
+    obs.pipe(groupBy((val) => val, {
+      duration: (group) => durations[Number(group.key)]
+    })).subscribe();
 
     rxTestScheduler.schedule(() => {
       durations.forEach((d, i) => {
@@ -1126,13 +1111,10 @@ describe('groupBy operator', () => {
         const arr: any[] = [];
 
         const subscription = group.pipe(
-          materialize(),
-          map((notification: Notification) => {
-            return { frame: rxTestScheduler.frame, notification: notification };
-          })
+          phonyMarbelize()
         ).subscribe((value: any) => {
-            arr.push(value);
-          });
+          arr.push(value);
+        });
 
         if (group.key === 'foo' && index === 0) {
           rxTestScheduler.schedule(() => {
@@ -1185,14 +1167,14 @@ describe('groupBy operator', () => {
       z: TestScheduler.parseMarbles(z, values)
     };
 
-    const unsubscriptionFrames = {
+    const unsubscriptionFrames: Record<string, number> = {
       foo: TestScheduler.parseMarblesAsSubscriptions(unsubv).unsubscribedFrame,
       bar: TestScheduler.parseMarblesAsSubscriptions(unsubw).unsubscribedFrame,
       baz: TestScheduler.parseMarblesAsSubscriptions(unsubx).unsubscribedFrame,
       qux: TestScheduler.parseMarblesAsSubscriptions(unsuby).unsubscribedFrame,
       foo2: TestScheduler.parseMarblesAsSubscriptions(unsubz).unsubscribedFrame
     };
-    const hasUnsubscribed = {};
+    const hasUnsubscribed: Record<string, boolean> = {};
 
     const source = e1.pipe(
       groupBy(
@@ -1204,13 +1186,10 @@ describe('groupBy operator', () => {
         const arr: any[] = [];
 
         const subscription = group.pipe(
-          materialize(),
-          map((notification: Notification) => {
-            return { frame: rxTestScheduler.frame, notification: notification };
-          })
+          phonyMarbelize()
         ).subscribe((value: any) => {
-            arr.push(value);
-          });
+          arr.push(value);
+        });
 
         const unsubscriptionFrame = hasUnsubscribed[group.key] ?
           unsubscriptionFrames[group.key + '2'] :
@@ -1261,7 +1240,7 @@ describe('groupBy operator', () => {
        y: TestScheduler.parseMarbles(y, values),
      };
 
-     const subscriptionFrames = {
+     const subscriptionFrames: Record<string, number> = {
        foo: TestScheduler.parseMarblesAsSubscriptions(subv).subscribedFrame,
        bar: TestScheduler.parseMarblesAsSubscriptions(subw).subscribedFrame,
        baz: TestScheduler.parseMarblesAsSubscriptions(subx).subscribedFrame,
@@ -1274,21 +1253,18 @@ describe('groupBy operator', () => {
          (val: string) => val
        ),
        map((group: any) => {
-         const innerNotifications: any[] = [];
-         const subscriptionFrame = subscriptionFrames[group.key];
+        const innerNotifications: any[] = [];
+        const subscriptionFrame = subscriptionFrames[group.key];
 
-         rxTestScheduler.schedule(() => {
-           group.pipe(
-              materialize(),
-              map((notification: Notification) => {
-                return { frame: rxTestScheduler.frame, notification: notification };
-              })
-            ).subscribe((value: any) => {
-               innerNotifications.push(value);
-             });
-         }, subscriptionFrame - rxTestScheduler.frame);
+        rxTestScheduler.schedule(() => {
+          group.pipe(
+            phonyMarbelize()
+          ).subscribe((value: any) => {
+            innerNotifications.push(value);
+          });
+        }, subscriptionFrame - rxTestScheduler.frame);
 
-         return innerNotifications;
+        return innerNotifications;
        })
       );
 
@@ -1329,13 +1305,10 @@ describe('groupBy operator', () => {
 
         rxTestScheduler.schedule(() => {
           group.pipe(
-            materialize(),
-            map((notification: Notification) => {
-              return { frame: rxTestScheduler.frame, notification: notification };
-            })
+            phonyMarbelize()
           ).subscribe((value: any) => {
-              arr.push(value);
-            });
+            arr.push(value);
+          });
         }, innerSubscriptionFrame - rxTestScheduler.frame);
 
         return arr;
@@ -1379,13 +1352,10 @@ describe('groupBy operator', () => {
 
         rxTestScheduler.schedule(() => {
           group.pipe(
-            materialize(),
-            map((notification: Notification) => {
-              return { frame: rxTestScheduler.frame, notification: notification };
-            })
+            phonyMarbelize()
           ).subscribe((value: any) => {
-              arr.push(value);
-            });
+            arr.push(value);
+          });
         }, innerSubscriptionFrame - rxTestScheduler.frame);
 
         return arr;
@@ -1396,59 +1366,37 @@ describe('groupBy operator', () => {
     expectSubscriptions(e1.subscriptions).toBe(e1subs);
   });
 
-  it('should return inner that does not throw when faulty outer is unsubscribed early',
-  () => {
-    const values = {
-      a: '  foo',
-      b: ' FoO ',
-      d: 'foO ',
-      i: 'FOO ',
-      l: '    fOo    '
+  it('should not error for late subscribed inners if outer is unsubscribed before inners are subscribed', () => {
+    const source = hot('-----^----a----b-----a------b----a----b---#');
+    // Unsubscribe before the error happens.
+    const unsub =           '                   !';
+    // Used to hold two subjects we're going to use to subscribe to our groups
+    const subjects: Record<string, Subject<string>> = {
+      a: new Subject(),
+      b: new Subject()
     };
-    const e1 = hot('-1--2--^-a-b---d---------i-----l-#', values);
-    const unsub =         '      !';
-    const expectedSubs =  '^     !';
-    const expected =      '--g----';
-    const innerSub =      '                                ^';
-    const g =                                             '-';
-
-    const expectedGroups = {
-      g: TestScheduler.parseMarbles(g, values)
-    };
-
-    const innerSubscriptionFrame = TestScheduler
-      .parseMarblesAsSubscriptions(innerSub)
-      .subscribedFrame;
-
-    const source = e1.pipe(
-      groupBy(
-        (val: string) => val.toLowerCase().trim(),
-        (val: string) => val,
-        (group: any) => group.pipe(skip(7))
-      ),
-      map((group: any) => {
-        const arr: any[] = [];
-
-        rxTestScheduler.schedule(() => {
-          group.pipe(
-            materialize(),
-            map((notification: Notification) => {
-              return { frame: rxTestScheduler.frame, notification: notification };
-            })
-          ).subscribe((value: any) => {
-              arr.push(value);
-            });
-        }, innerSubscriptionFrame - rxTestScheduler.frame);
-
-        return arr;
-      })
+    const result = source.pipe(
+      groupBy(char => char),
+      tap({
+        // The real test is here, schedule each group to be subscribed to
+        // long after the source errors and long after the unsubscription happens.
+        next: group => {
+          rxTestScheduler.schedule(
+            () => group.subscribe(subjects[group.key]), 1000
+          );
+        }
+      }),
+      // We don't are about what the outer is emitting
+      ignoreElements()
     );
+    // Just to get the test going.
+    expectObservable(result, unsub).toBe('-');
+    // Our two groups should error immediately upon subscription.
+    expectObservable(subjects.a).toBe('-');
+    expectObservable(subjects.b).toBe('-');
+  })
 
-    expectObservable(source, unsub).toBe(expected, expectedGroups);
-    expectSubscriptions(e1.subscriptions).toBe(expectedSubs);
-  });
-
-  it('should not break lift() composability', (done: MochaDone) => {
+  it('should not break lift() composability', (done) => {
     class MyCustomObservable<T> extends Observable<T> {
       lift<R>(operator: Operator<T, R>): Observable<R> {
         const observable = new MyCustomObservable<R>();
@@ -1477,7 +1425,7 @@ describe('groupBy operator', () => {
 
     result
       .subscribe((g: any) => {
-        const expectedGroup = expectedGroups.shift();
+        const expectedGroup = expectedGroups.shift()!;
         expect(g.key).to.equal(expectedGroup.key);
 
         g.subscribe((x: any) => {
@@ -1489,4 +1437,41 @@ describe('groupBy operator', () => {
         done();
       });
   });
+
+  it('should stop listening to a synchronous observable when unsubscribed', () => {
+    const sideEffects: number[] = [];
+    const synchronousObservable = new Observable<number>(subscriber => {
+      // This will check to see if the subscriber was closed on each loop
+      // when the unsubscribe hits (from the `take`), it should be closed
+      for (let i = 0; !subscriber.closed && i < 10; i++) {
+        sideEffects.push(i);
+        subscriber.next(i);
+      }
+    });
+
+    synchronousObservable.pipe(
+      groupBy(value => value),
+      take(3),
+    ).subscribe(() => { /* noop */ });
+
+    expect(sideEffects).to.deep.equal([0, 1, 2]);
+  });
 });
+
+/**
+ * TODO: A helper operator to deal with legacy tests above that could probably be written a different way
+ */
+function phonyMarbelize<T>() {
+  return (source: Observable<T>) => source.pipe(
+    materialize(),
+    map((notification) => {
+      // Because we're hacking some weird inner-observable marbles here, we need
+      // to make sure this is all the same shape as it would be from the TestScheduler
+      // assertions
+      return {
+        frame: rxTestScheduler.frame,
+        notification: createNotification(notification.kind, notification.value, notification.error)
+      };
+    })
+  );
+}

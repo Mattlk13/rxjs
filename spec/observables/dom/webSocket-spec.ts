@@ -3,19 +3,21 @@ import * as sinon from 'sinon';
 import { webSocket } from 'rxjs/webSocket';
 import { map, retry, take, repeat, takeWhile } from 'rxjs/operators';
 
-declare const __root__: any;
+const root: any = (typeof globalThis !== 'undefined' && globalThis)
+  || (typeof self !== 'undefined' && self)
+  || global;
 
-/** @test {webSocket} */
+/** @test {webSocket}  */
 describe('webSocket', () => {
   let __ws: any;
 
   function setupMockWebSocket() {
-    __ws = __root__.WebSocket;
-    __root__.WebSocket = MockWebSocket;
+    __ws = root.WebSocket;
+    root.WebSocket = MockWebSocket;
   }
 
   function teardownMockWebSocket() {
-    __root__.WebSocket = __ws;
+    root.WebSocket = __ws;
     MockWebSocket.clearSockets();
   }
 
@@ -164,6 +166,32 @@ describe('webSocket', () => {
       const socket = MockWebSocket.lastSocket;
       sinon.spy(socket, 'close');
       socket.open();
+
+      expect(socket.close).have.been.called;
+      expect(socket.readyState).to.equal(3); // closed
+
+      (<any>socket.close).restore();
+    });
+
+    it('should close the socket when unsubscribed while connecting', () => {
+      const subject = webSocket<string>('ws://mysocket');
+      subject.subscribe();
+      const socket = MockWebSocket.lastSocket;
+      sinon.spy(socket, 'close');
+      subject.unsubscribe();
+
+      expect(socket.close).have.been.called;
+      expect(socket.readyState).to.equal(3); // closed
+
+      (<any>socket.close).restore();
+    });
+
+    it('should close the socket when subscription is cancelled while connecting', () => {
+      const subject = webSocket<string>('ws://mysocket');
+      const subscription = subject.subscribe();
+      const socket = MockWebSocket.lastSocket;
+      sinon.spy(socket, 'close');
+      subscription.unsubscribe();
 
       expect(socket.close).have.been.called;
       expect(socket.readyState).to.equal(3); // closed
@@ -666,14 +694,11 @@ describe('webSocket', () => {
   });
 
   describe('node constructor', () => {
-
     it('should send and receive messages', () => {
       let messageReceived = false;
       const subject = webSocket<string>(<any>{
         url: 'ws://mysocket',
-        WebSocketCtor: (url: string, protocol: string): MockWebSocket => {
-          return new MockWebSocket(url, protocol);
-        }
+        WebSocketCtor: MockWebSocket
       });
 
       subject.next('ping');
@@ -713,7 +738,7 @@ class MockWebSocket {
   static get lastSocket(): MockWebSocket {
     const socket = MockWebSocket.sockets;
     const length = socket.length;
-    return length > 0 ? socket[length - 1] : undefined;
+    return length > 0 ? socket[length - 1] : undefined!;
   }
 
   static clearSockets(): void {
@@ -738,8 +763,7 @@ class MockWebSocket {
   get lastMessageSent(): string {
     const sent = this.sent;
     const length = sent.length;
-
-    return length > 0 ? sent[length - 1] : undefined;
+    return length > 0 ? sent[length - 1] : undefined!;
   }
 
   triggerClose(e: any): void {
@@ -752,7 +776,7 @@ class MockWebSocket {
       data: data,
       origin: 'mockorigin',
       ports: undefined as any,
-      source: __root__,
+      source: root,
     };
 
     this.trigger('message', messageEvent);
@@ -772,7 +796,7 @@ class MockWebSocket {
     }
   }
 
-  trigger(name: string, e: any) {
+  trigger(this: any, name: string, e: any) {
     if (this['on' + name]) {
       this['on' + name](e);
     }

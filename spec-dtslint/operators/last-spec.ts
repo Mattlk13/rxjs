@@ -60,5 +60,25 @@ it('should support a predicate with a non-T default', () => {
 });
 
 it('should default D to T with a predicate', () => {
-  const o = of('foo').pipe(last<string>(x => !!x)); // $Observable<string>
+  const o = of('foo').pipe(last<string>(x => !!x)); // $ExpectType Observable<string>
+});
+
+it('should handle predicates that always return false properly', () => {
+  const a = of('foo', 'bar').pipe(last(() => false as const)); // $ExpectType Observable<string>
+  const b = of('foo', 'bar').pipe(last(() => false as const, 1337 as const)); // $ExpectType Observable<string | 1337>
+});
+
+it('should handle Boolean constructor properly', () => {
+  const a = of(0 as const, -0 as const, null, undefined, false as const, '' as const, 0n as const).pipe(last(Boolean)); // $ExpectType Observable<never>
+  const b = of(0 as const, -0 as const, null, undefined, false as const, '' as const, 0n as const).pipe(last(Boolean, 'test' as const)); // $ExpectType Observable<"test">
+  const c = of(0 as const, -0 as const, null, 'hi' as const, undefined, false as const, '' as const, 0n as const).pipe(last(Boolean)); // $ExpectType Observable<"hi">
+  const d = of(0 as const, -0 as const, null, 'hi' as const, undefined, false as const, '' as const, 0n as const).pipe(last(Boolean, 'test' as const)); // $ExpectType Observable<"test" | "hi">
+});
+
+it('should support inference from a predicate that returns any', () => {
+  function isTruthy(value: number): any {
+    return !!value;
+  }
+
+  const o$ = of(1).pipe(last(isTruthy)); // $ExpectType Observable<number>
 });

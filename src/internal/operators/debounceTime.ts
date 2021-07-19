@@ -1,9 +1,8 @@
-import { Operator } from '../Operator';
-import { Observable } from '../Observable';
-import { Subscriber } from '../Subscriber';
+import { asyncScheduler } from '../scheduler/async';
 import { Subscription } from '../Subscription';
-import { async } from '../scheduler/async';
-import { MonoTypeOperatorFunction, SchedulerLike, TeardownLogic } from '../types';
+import { MonoTypeOperatorFunction, SchedulerAction, SchedulerLike } from '../types';
+import { operate } from '../util/lift';
+import { OperatorSubscriber } from './OperatorSubscriber';
 
 /**
  * Emits a notification from the source Observable only after a particular time span
@@ -58,80 +57,68 @@ import { MonoTypeOperatorFunction, SchedulerLike, TeardownLogic } from '../types
  * source value.
  * @param {SchedulerLike} [scheduler=async] The {@link SchedulerLike} to use for
  * managing the timers that handle the timeout for each value.
- * @return {Observable} An Observable that delays the emissions of the source
- * Observable by the specified `dueTime`, and may drop some values if they occur
- * too frequently.
- * @method debounceTime
- * @owner Observable
+ * @return A function that returns an Observable that delays the emissions of
+ * the source Observable by the specified `dueTime`, and may drop some values
+ * if they occur too frequently.
  */
-export function debounceTime<T>(dueTime: number, scheduler: SchedulerLike = async): MonoTypeOperatorFunction<T> {
-  return (source: Observable<T>) => source.lift(new DebounceTimeOperator(dueTime, scheduler));
-}
+export function debounceTime<T>(dueTime: number, scheduler: SchedulerLike = asyncScheduler): MonoTypeOperatorFunction<T> {
+  return operate((source, subscriber) => {
+    let activeTask: Subscription | null = null;
+    let lastValue: T | null = null;
+    let lastTime: number | null = null;
 
-class DebounceTimeOperator<T> implements Operator<T, T> {
-  constructor(private dueTime: number, private scheduler: SchedulerLike) {
-  }
+    const emit = () => {
+      if (activeTask) {
+        // We have a value! Free up memory first, then emit the value.
+        activeTask.unsubscribe();
+        activeTask = null;
+        const value = lastValue!;
+        lastValue = null;
+        subscriber.next(value);
+      }
+    };
+    function emitWhenIdle(this: SchedulerAction<unknown>) {
+      // This is called `dueTime` after the first value
+      // but we might have received new values during this window!
 
-  call(subscriber: Subscriber<T>, source: any): TeardownLogic {
-    return source.subscribe(new DebounceTimeSubscriber(subscriber, this.dueTime, this.scheduler));
-  }
-}
+      const targetTime = lastTime! + dueTime;
+      const now = scheduler.now();
+      if (now < targetTime) {
+        // On that case, re-schedule to the new target
+        activeTask = this.schedule(undefined, targetTime - now);
+        subscriber.add(activeTask);
+        return;
+      }
 
-/**
- * We need this JSDoc comment for affecting ESDoc.
- * @ignore
- * @extends {Ignored}
- */
-class DebounceTimeSubscriber<T> extends Subscriber<T> {
-  private debouncedSubscription: Subscription = null;
-  private lastValue: T = null;
-  private hasValue: boolean = false;
-
-  constructor(destination: Subscriber<T>,
-              private dueTime: number,
-              private scheduler: SchedulerLike) {
-    super(destination);
-  }
-
-  protected _next(value: T) {
-    this.clearDebounce();
-    this.lastValue = value;
-    this.hasValue = true;
-    this.add(this.debouncedSubscription = this.scheduler.schedule(dispatchNext, this.dueTime, this));
-  }
-
-  protected _complete() {
-    this.debouncedNext();
-    this.destination.complete();
-  }
-
-  debouncedNext(): void {
-    this.clearDebounce();
-
-    if (this.hasValue) {
-      const { lastValue } = this;
-      // This must be done *before* passing the value
-      // along to the destination because it's possible for
-      // the value to synchronously re-enter this operator
-      // recursively when scheduled with things like
-      // VirtualScheduler/TestScheduler.
-      this.lastValue = null;
-      this.hasValue = false;
-      this.destination.next(lastValue);
+      emit();
     }
-  }
 
-  private clearDebounce(): void {
-    const debouncedSubscription = this.debouncedSubscription;
+    source.subscribe(
+      new OperatorSubscriber(
+        subscriber,
+        (value: T) => {
+          lastValue = value;
+          lastTime = scheduler.now();
 
-    if (debouncedSubscription !== null) {
-      this.remove(debouncedSubscription);
-      debouncedSubscription.unsubscribe();
-      this.debouncedSubscription = null;
-    }
-  }
-}
-
-function dispatchNext(subscriber: DebounceTimeSubscriber<any>) {
-  subscriber.debouncedNext();
+          // Only set up a task if it's not already up
+          if (!activeTask) {
+            activeTask = scheduler.schedule(emitWhenIdle, dueTime);
+            subscriber.add(activeTask);
+          }
+        },
+        () => {
+          // Source completed.
+          // Emit any pending debounced values then complete
+          emit();
+          subscriber.complete();
+        },
+        // Pass all errors through to consumer.
+        undefined,
+        () => {
+          // Teardown.
+          lastValue = activeTask = null;
+        }
+      )
+    );
+  });
 }

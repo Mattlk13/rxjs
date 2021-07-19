@@ -1,14 +1,11 @@
 import { expect } from 'chai';
 import { hot, cold, expectObservable, expectSubscriptions } from '../helpers/marble-testing';
 import { reduce, mergeMap } from 'rxjs/operators';
-import { range, of, Observable } from 'rxjs';
-
-declare const type: Function;
-declare const asDiagram: Function;
+import { range, of } from 'rxjs';
 
 /** @test {reduce} */
 describe('reduce operator', () => {
-  asDiagram('reduce((acc, curr) => acc + curr, 0)')('should reduce', () => {
+  it('should reduce', () => {
     const values = {
       a: 1, b: 3, c: 5, x: 9
     };
@@ -68,7 +65,7 @@ describe('reduce operator', () => {
     expectSubscriptions(e1.subscriptions).toBe(e1subs);
   });
 
-  it('should reduce with index without seed', (done: MochaDone) => {
+  it('should reduce with index without seed', (done) => {
     const idx = [1, 2, 3, 4, 5];
 
     range(0, 6).pipe(reduce((acc, value, index) => {
@@ -80,7 +77,7 @@ describe('reduce operator', () => {
     });
   });
 
-  it('should reduce with index with seed', (done: MochaDone) => {
+  it('should reduce with index with seed', (done) => {
     const idx = [0, 1, 2, 3, 4, 5];
 
     range(0, 6).pipe(reduce((acc, value, index) => {

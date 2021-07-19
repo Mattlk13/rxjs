@@ -74,8 +74,8 @@ describe('pipe', () => {
     const o = of('foo').pipe(a('1'), a('2'), a('3'), a('4'), a('5'), a('6'), a('7'), a('8'), a('9')); // $ExpectType Observable<"9">
   });
 
-  it('should infer {} for more than 9 arguments', () => {
-    const o = of('foo').pipe(a('1'), a('2'), a('3'), a('4'), a('5'), a('6'), a('7'), a('8'), a('9'), a('10')); // $ExpectType Observable<{}>
+  it('should infer unknown for more than 9 arguments', () => {
+    const o = of('foo').pipe(a('1'), a('2'), a('3'), a('4'), a('5'), a('6'), a('7'), a('8'), a('9'), a('10')); // $ExpectType Observable<unknown>
   });
 
   it('should require a type assertion for more than 9 arguments', () => {
@@ -119,11 +119,39 @@ describe('pipe', () => {
   });
 
   it('should not enforce types beyond the 9th argument', () => {
-    const o = of('foo').pipe(a('1'), a('2'), a('3'), a('4'), a('5'), a('6'), a('7'), a('8'), a('9'), a('#', '10')); // $ExpectType Observable<{}>
+    const o = of('foo').pipe(a('1'), a('2'), a('3'), a('4'), a('5'), a('6'), a('7'), a('8'), a('9'), a('#', '10')); // $ExpectType Observable<unknown>
   });
 
   it('should support operators that return generics', () => {
     const customOperator = () => <T>(a: Observable<T>) => a;
     const o = of('foo').pipe(customOperator()); // $ExpectType Observable<string>
+  });
+
+  it('should have proper return type for toPromise', () => {
+    const o = of('foo').toPromise(); // $ExpectType Promise<string | undefined>
+  });
+});
+
+describe('subscribe', () => {
+  it('should deprecate the multi-argument usage', () => {
+    const next = (value: number) => {};
+    const error = (error: any) => {};
+    const complete = () => {};
+    const o = of(42);
+    o.subscribe(); // $ExpectNoDeprecation
+    o.subscribe({ next }); // $ExpectNoDeprecation
+    o.subscribe({ next, error }); // $ExpectNoDeprecation
+    o.subscribe({ next, complete }); // $ExpectNoDeprecation
+    o.subscribe({ next, error, complete }); // $ExpectNoDeprecation
+    o.subscribe({ error }); // $ExpectNoDeprecation
+    o.subscribe({ error, complete }); // $ExpectNoDeprecation
+    o.subscribe({ complete }); // $ExpectNoDeprecation
+    o.subscribe(next); // $ExpectNoDeprecation
+    o.subscribe(null, error); // $ExpectDeprecation
+    o.subscribe(undefined, error); // $ExpectDeprecation
+    o.subscribe(null, error, complete); // $ExpectDeprecation
+    o.subscribe(undefined, error, complete); // $ExpectDeprecation
+    o.subscribe(null, null, complete); // $ExpectDeprecation
+    o.subscribe(undefined, undefined, complete); // $ExpectDeprecation
   });
 });

@@ -9,100 +9,119 @@
       "title": "Reference"
     },
     {
-      "url": "guide/v6/migration",
-      "title": "Migration"
-    },
-    {
       "url": "team",
       "title": "Team"
     }
   ],
-
   "TopBarNarrow": [],
-	"SideNav": [
-		{
-			"url": "guide/overview",
-			"title": "Overview",
-			"tooltip": "RxJS Overview",
-			"children": [
-				{
-					"url": "guide/observable",
-					"title": "Observables"
-				},
-				{
-					"url": "guide/operators",
-					"title": "Operators"
-				},
-				{
-					"url": "guide/subscription",
-					"title": "Subscription"
-				},
+  "SideNav": [
+    {
+      "url": "guide/overview",
+      "title": "Overview",
+      "tooltip": "RxJS Overview",
+      "children": [
         {
-					"url": "guide/subject",
-					"title": "Subjects"
-				},
-        {
-					"url": "guide/scheduler",
-					"title": "Scheduler"
+          "url": "guide/observable",
+          "title": "Observables"
         },
-				{
-					"title": "Testing",
-					"children": [
-						{
-							"url": "guide/testing/marble-testing",
-							"title": "Marble Testing"
-						},
-						{
-							"url": "guide/testing/internal-marble-tests",
-							"title": "Contribute tests to RxJS"
-						}
-					]
-				}
-			]
-		},
-		{
-			"url": "guide/installation",
-			"title": "Installation",
-			"tooltip": "Installation"
-		},
+        {
+          "url": "guide/observer",
+          "title": "Observer"
+        },
+        {
+          "url": "guide/operators",
+          "title": "Operators"
+        },
+        {
+          "url": "guide/subscription",
+          "title": "Subscription"
+        },
+        {
+          "url": "guide/subject",
+          "title": "Subjects"
+        },
+        {
+          "url": "guide/scheduler",
+          "title": "Scheduler"
+        },
+        {
+          "url": "guide/testing/marble-testing",
+          "title": "Marble Testing"
+        }
+      ]
+    },
+    {
+      "url": "guide/installation",
+      "title": "Installation",
+      "tooltip": "Installation"
+    },
     {
       "url": "api",
       "title": "Reference",
       "tooltip": "RxJS Reference"
     },
     {
+      "url": "guide/glossary-and-semantics",
+      "title": "Glossary",
+      "tooltip": "Glossary and Semantics"
+    },
+    {
       "tooltip": "Operator Decision Tree",
       "url": "operator-decision-tree",
       "title": "Operator Decision Tree"
     },
-		{
-			"title": "About Version 6",
-			"children": [
-				{
-					"url": "guide/v6/migration",
-					"title": "Migration"
-				},
-				{
-					"url": "guide/v6/pipeable-operators",
-					"title": "Pipeable Operators"
-				},
-				{
-					"url": "api/deprecations",
-					"title": "Deprecations",
-					"tooltip": "List of Deprecations"
-				}
-			]
-		},
-		{
-      "url": "resources",
-      "title": "External Resources",
-      "tooltip": "External Resources"
-		},
-		{
-			"url": "code-of-conduct",
-			"title": "Code of Conduct",
-			"tooltip": "Code of Conduct"
-		}
-	],
-	"docVersions": []
+    {
+      "title": "Deprecations & Breaking Changes",
+      "children": [
+        {
+          "url": "deprecations/breaking-changes",
+          "title": "Breaking Changes"
+        },
+        {
+          "url": "deprecations/scheduler-argument",
+          "title": "Scheduler Argument"
+        },
+        {
+          "url": "deprecations/subscribe-arguments",
+          "title": "Subscribe Arguments"
+        },
+        {
+          "url": "deprecations/resultSelector",
+          "title": "ResultSelector Arguments"
+        },
+        {
+          "url": "deprecations/array-argument",
+          "title": "Array Arguments"
+        },
+        {
+          "url": "deprecations/multicasting",
+          "title": "Multicasting"
+        },
+        {
+          "url": "deprecations/to-promise",
+          "title": "Conversion to Promises"
+        }
+      ]
+    },
+    {
+      "url": "6-to-7-change-summary",
+      "title": "Detailed Change List",
+      "tooltip": "Detailed Change List"
+    },
+    {
+      "url": "code-of-conduct",
+      "title": "Code of Conduct",
+      "tooltip": "Code of Conduct"
+    }
+  ],
+  "docVersions": [
+    {
+      "title": "stable",
+      "url": "https://rxjs.dev/"
+    },
+    {
+      "title": "v6",
+      "url": "https://v6.rxjs.dev/"
+    }
+  ]
 }

@@ -23,6 +23,8 @@ import { TocService } from 'app/shared/toc.service';
 
 import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
 import { first, map } from 'rxjs/operators';
+import { Inject } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 
 const sideNavView = 'SideNav';
 
@@ -114,7 +116,8 @@ export class AppComponent implements OnInit {
     private navigationService: NavigationService,
     private scrollService: ScrollService,
     private searchService: SearchService,
-    private tocService: TocService
+    private tocService: TocService,
+    @Inject(DOCUMENT) private dom
   ) {}
 
   ngOnInit() {
@@ -154,15 +157,7 @@ export class AppComponent implements OnInit {
       this.navigationService.versionInfo,
       this.navigationService.navigationViews.pipe(map(views => views['docVersions']))
     ).subscribe(([versionInfo, versions]) => {
-      // TODO(pbd): consider whether we can lookup the stable and next versions from the internet
-      const computedVersions: NavigationNode[] = [
-        { title: 'next', url: 'https://next.angular.io' },
-        { title: 'stable', url: 'https://angular.io' },
-      ];
-      if (this.deployment.mode === 'archive') {
-        computedVersions.push({ title: `v${versionInfo.major}` });
-      }
-      this.docVersions = [...computedVersions, ...versions];
+      this.docVersions = [...versions];
 
       // Find the current version - eithers title matches the current deployment mode
       // or its title matches the major version of the current version info
@@ -233,7 +228,15 @@ export class AppComponent implements OnInit {
       // (Apparently, this happens with a slight delay.)
       setTimeout(() => (this.isStarting = false), 100);
     }
-
+    console.log('ondoc rendered');
+    const head = this.dom.getElementsByTagName('head')[0];
+    let element: HTMLLinkElement = this.dom.querySelector(`link[rel='canonical']`) || null
+    if (element === null) {
+      element = this.dom.createElement('link') as HTMLLinkElement;
+      head.appendChild(element);
+    }
+    element.setAttribute('rel', 'canonical')
+    element.setAttribute('href', `https://rxjs.dev/${this.currentPath}`)
     this.isTransitioning = false;
   }
 

@@ -1,13 +1,12 @@
 import { expect } from 'chai';
 import { hot, cold, expectObservable, expectSubscriptions } from '../helpers/marble-testing';
-import { repeatWhen, map, mergeMap, takeUntil } from 'rxjs/operators';
+import { repeatWhen, map, mergeMap, takeUntil, takeWhile, take } from 'rxjs/operators';
 import { of, EMPTY, Observable, Subscriber } from 'rxjs';
-
-declare function asDiagram(arg: string): Function;
+import { SafeSubscriber } from 'rxjs/internal/Subscriber';
 
 /** @test {repeatWhen} */
 describe('repeatWhen operator', () => {
-  asDiagram('repeatWhen')('should handle a source with eventual complete using a hot notifier', () => {
+  it('should handle a source with eventual complete using a hot notifier', () => {
     const source =  cold('-1--2--|');
     const subs =        ['^      !                     ',
                        '             ^      !        ',
@@ -35,7 +34,7 @@ describe('repeatWhen operator', () => {
     expectSubscriptions(source.subscriptions).toBe(subs);
   });
 
-  it('should repeat when notified via returned notifier on complete', (done: MochaDone) => {
+  it('should repeat when notified via returned notifier on complete', (done) => {
     let retried = false;
     const expected = [1, 2, 1, 2];
     let i = 0;
@@ -63,7 +62,7 @@ describe('repeatWhen operator', () => {
     }
   });
 
-  it('should not repeat when applying an empty notifier', (done: MochaDone) => {
+  it('should not repeat when applying an empty notifier', (done) => {
     const expected = [1, 2];
     const nexted: number[] = [];
     of(1, 2).pipe(
@@ -94,7 +93,7 @@ describe('repeatWhen operator', () => {
     Observable.prototype.subscribe = function (...args: any[]): any {
       let [subscriber] = args;
       if (!(subscriber instanceof Subscriber)) {
-        subscriber = new Subscriber<any>(...args);
+        subscriber = new SafeSubscriber(...args);
       }
       subscriber.error = function (err: any): void {
         errors.push(err);
@@ -121,7 +120,7 @@ describe('repeatWhen operator', () => {
     Observable.prototype.subscribe = function (...args: any[]): any {
       let [subscriber] = args;
       if (!(subscriber instanceof Subscriber)) {
-        subscriber = new Subscriber<any>(...args);
+        subscriber = new SafeSubscriber(...args);
       }
       subscriber.error = function (err: any): void {
         errors.push(err);
@@ -386,5 +385,45 @@ describe('repeatWhen operator', () => {
 
     expectObservable(result).toBe(expected);
     expectSubscriptions(source.subscriptions).toBe(subs);
+  });
+
+  it('should always teardown before starting the next cycle, even when synchronous', () => {
+    const results: any[] = [];
+    const source = new Observable<number>(subscriber => {
+      subscriber.next(1);
+      subscriber.next(2);
+      subscriber.complete();
+      return () => {
+        results.push('teardown');
+      }
+    });
+    const subscription = source.pipe(repeatWhen(completions$ => completions$.pipe(
+      takeWhile((_, i) => i < 3)
+    ))).subscribe({
+      next: value => results.push(value),
+      complete: () => results.push('complete')
+    });
+
+    expect(subscription.closed).to.be.true;
+    expect(results).to.deep.equal([1, 2, 'teardown', 1, 2, 'teardown', 1, 2, 'teardown', 1, 2, 'complete', 'teardown'])
+  });
+
+  it('should stop listening to a synchronous observable when unsubscribed', () => {
+    const sideEffects: number[] = [];
+    const synchronousObservable = new Observable<number>(subscriber => {
+      // This will check to see if the subscriber was closed on each loop
+      // when the unsubscribe hits (from the `take`), it should be closed
+      for (let i = 0; !subscriber.closed && i < 10; i++) {
+        sideEffects.push(i);
+        subscriber.next(i);
+      }
+    });
+
+    synchronousObservable.pipe(
+      repeatWhen(() => of(0)),
+      take(3),
+    ).subscribe(() => { /* noop */ });
+
+    expect(sideEffects).to.deep.equal([0, 1, 2]);
   });
 });

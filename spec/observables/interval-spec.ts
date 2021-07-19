@@ -1,16 +1,15 @@
 import { expect } from 'chai';
 import { expectObservable } from '../helpers/marble-testing';
-import { NEVER, interval, asapScheduler, Observable, animationFrameScheduler, queueScheduler } from 'rxjs';
+import { NEVER, interval, asapScheduler, animationFrameScheduler, queueScheduler } from 'rxjs';
 import { TestScheduler } from 'rxjs/testing';
 import { take, concat } from 'rxjs/operators';
 import * as sinon from 'sinon';
 
-declare const asDiagram: any;
 declare const rxTestScheduler: TestScheduler;
 
 /** @test {interval} */
 describe('interval', () => {
-  asDiagram('interval(1000)')('should create an observable emitting periodically', () => {
+  it('should create an observable emitting periodically', () => {
     const e1 = interval(20, rxTestScheduler).pipe(
       take(6), // make it actually finite, so it can be rendered
       concat(NEVER) // but pretend it's infinite by not completing
@@ -44,7 +43,7 @@ describe('interval', () => {
     expectObservable(e1).toBe(expected, [0, 1, 2, 3, 4, 5, 6]);
   });
 
-  it('should emit values until unsubscribed', (done: MochaDone) => {
+  it('should emit values until unsubscribed', (done) => {
     const values: number[] = [];
     const expected = [0, 1, 2, 3, 4, 5, 6];
     const e1 = interval(5);
@@ -62,8 +61,8 @@ describe('interval', () => {
     });
   });
 
-  it('should create an observable emitting periodically with the AsapScheduler', (done: MochaDone) => {
-    const sandbox = sinon.sandbox.create();
+  it('should create an observable emitting periodically with the AsapScheduler', (done) => {
+    const sandbox = sinon.createSandbox();
     const fakeTimer = sandbox.useFakeTimers();
     const period = 10;
     const events = [0, 1, 2, 3, 4, 5];
@@ -78,7 +77,7 @@ describe('interval', () => {
       },
       complete() {
         expect(asapScheduler.actions.length).to.equal(0);
-        expect(asapScheduler.scheduled).to.equal(undefined);
+        expect(asapScheduler._scheduled).to.equal(undefined);
         sandbox.restore();
         done();
       }
@@ -89,8 +88,8 @@ describe('interval', () => {
     }
   });
 
-  it('should create an observable emitting periodically with the QueueScheduler', (done: MochaDone) => {
-    const sandbox = sinon.sandbox.create();
+  it('should create an observable emitting periodically with the QueueScheduler', (done) => {
+    const sandbox = sinon.createSandbox();
     const fakeTimer = sandbox.useFakeTimers();
     const period = 10;
     const events = [0, 1, 2, 3, 4, 5];
@@ -105,7 +104,7 @@ describe('interval', () => {
       },
       complete() {
         expect(queueScheduler.actions.length).to.equal(0);
-        expect(queueScheduler.scheduled).to.equal(undefined);
+        expect(queueScheduler._scheduled).to.equal(undefined);
         sandbox.restore();
         done();
       }
@@ -116,8 +115,8 @@ describe('interval', () => {
     }
   });
 
-  it('should create an observable emitting periodically with the AnimationFrameScheduler', (done: MochaDone) => {
-    const sandbox = sinon.sandbox.create();
+  it('should create an observable emitting periodically with the AnimationFrameScheduler', (done) => {
+    const sandbox = sinon.createSandbox();
     const fakeTimer = sandbox.useFakeTimers();
     const period = 10;
     const events = [0, 1, 2, 3, 4, 5];
@@ -132,7 +131,7 @@ describe('interval', () => {
       },
       complete() {
         expect(animationFrameScheduler.actions.length).to.equal(0);
-        expect(animationFrameScheduler.scheduled).to.equal(undefined);
+        expect(animationFrameScheduler._scheduled).to.equal(undefined);
         sandbox.restore();
         done();
       }

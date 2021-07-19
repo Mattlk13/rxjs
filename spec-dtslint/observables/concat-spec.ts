@@ -28,8 +28,8 @@ it('should accept more than 6 params', () => {
   const o = concat(of(1), of(2), of(3), of(4), of(5), of(6), of(7), of(8), of(9)); // $ExpectType Observable<number>
 });
 
-it('should return Observable<{}> for more than 6 different types of params', () => {
-  const o = concat(of(1), of('a'), of(2), of(true), of(3), of([1, 2, 3]), of(4)); // $ExpectType Observable<{}>
+it('should return Observable<unknown> for more than 6 different types of params', () => {
+  const o = concat(of(1), of('a'), of(2), of(true), of(3), of([1, 2, 3]), of(4)); // $ExpectType Observable<string | number | boolean | number[]>
 });
 
 it('should accept scheduler after params', () => {
@@ -55,6 +55,11 @@ it('should infer correctly with multiple types', () => {
 it('should enforce types', () => {
   const o = concat(5); // $ExpectError
   const p = concat(of(5), 6); // $ExpectError
+  const q = concat(of(5), 6, asyncScheduler); // $ExpectError
+  const r = concat(of(5), asyncScheduler, asyncScheduler); // $ExpectError
+  const s = concat(asyncScheduler, asyncScheduler); // $ExpectError
+  const t = concat(asyncScheduler, of(1)); // $ExpectError
+  const u = concat(of(1), asyncScheduler, of(1)); // $ExpectError
 });
 
 it('should support union types', () => {
