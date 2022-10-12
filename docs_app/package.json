@@ -105,7 +105,7 @@
     "karma-coverage-istanbul-reporter": "^2.0.5",
     "karma-jasmine": "^2.0.1",
     "karma-jasmine-html-reporter": "^1.4.2",
-    "lighthouse": "^5.1.0",
+    "lighthouse": "^9.6.7",
     "lodash": "^4.17.11",
     "lunr": "^2.1.0",
     "mkdirp": "^0.5.1",
