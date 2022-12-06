@@ -90,7 +90,7 @@
     "hast-util-is-element": "^1.0.3",
     "hast-util-to-string": "^1.0.2",
     "html": "^1.0.0",
-    "http-server": "^0.11.1",
+    "http-server": "^0.11.2",
     "ignore": "^5.1.2",
     "image-size": "^0.7.4",
     "jasmine": "^3.4.0",
